@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "FocusLens",
+  "version": "0.1.0",
+  "description": "Per-tab screen time for the local FocusLens desktop app. Sends hostnames only, and only to 127.0.0.1 — never to any remote server.",
+  "permissions": ["tabs", "idle", "alarms", "storage"],
+  "host_permissions": ["http://127.0.0.1:48732/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "FocusLens"
+  },
+  "icons": {
+    "32": "icons/32x32.png",
+    "128": "icons/128x128.png"
+  }
+}
