@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,200;9..144,400&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
@@ -225,7 +225,8 @@ code.tok{
 .qr-back.open .qr-box{transform:none}
 .qr-t{font-family:'Fraunces',serif;font-size:20px;font-weight:400;margin-bottom:6px}
 .qr-s{font-size:12px;color:var(--ink-2);line-height:1.55;margin-bottom:22px}
-#qr-cv{border-radius:10px;margin:0 auto 18px;display:block}
+#qr-cv{border-radius:10px;overflow:hidden;margin:0 auto 18px;display:inline-block;line-height:0}
+#qr-cv img,#qr-cv canvas{display:block}
 .qr-url{
   font-family:'DM Mono',monospace;font-size:11px;color:var(--ink-3);
   background:var(--surf);border-radius:var(--r);padding:8px 12px;
@@ -386,7 +387,7 @@ code.tok{
   <div class="qr-box">
     <div class="qr-t">Open on your phone</div>
     <div class="qr-s">Connect to the same Wi-Fi network,<br>then scan to open the dashboard.</div>
-    <canvas id="qr-cv"></canvas>
+    <div id="qr-cv"></div>
     <div class="qr-url" id="qr-url">Detecting local IP…</div>
     <button class="qr-cl" onclick="closeQR(null,true)">Done</button>
   </div>
@@ -551,10 +552,17 @@ async function openQR() {
       url = 'http://'+d.localIp+':'+d.port+'/';
   } catch {}
   document.getElementById('qr-url').textContent = url;
-  try {
-    QRCode.toCanvas(document.getElementById('qr-cv'), url,
-      {width:210,margin:2,color:{dark:'#1C1610',light:'#F2EDE3'}});
-  } catch { document.getElementById('qr-cv').style.display='none'; }
+  const el = document.getElementById('qr-cv');
+  el.innerHTML = '';
+  if (typeof QRCode !== 'undefined') {
+    new QRCode(el, {
+      text: url, width: 210, height: 210,
+      colorDark: '#1C1610', colorLight: '#F2EDE3',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  } else {
+    el.innerHTML = '<p style="font-size:12px;color:var(--ink-2);padding:20px 0">QR library unavailable.<br>Open this URL on your phone:</p>';
+  }
 }
 
 function closeQR(e, force) {
