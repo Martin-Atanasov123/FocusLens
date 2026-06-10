@@ -1,0 +1,7 @@
+flask>=3.0
+pystray>=0.19
+Pillow>=10.0
+pywin32>=306; sys_platform == "win32"
+psutil>=5.9
+plyer>=2.1
+pytest>=8.0

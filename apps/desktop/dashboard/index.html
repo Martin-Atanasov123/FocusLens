@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>FocusLens</title>
+<style>
+:root{--bg:#0f1117;--panel:#181b25;--panel2:#1f2330;--text:#e6e8ef;--muted:#8b90a1;
+  --accent:#818cf8;--accentdim:#4f46e5;--ok:#34d399;--warn:#fbbf24;--over:#f87171;--r:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+#app{max-width:860px;margin:0 auto;padding:24px 20px 60px}
+h1{font-size:20px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:28px 0 10px}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.tabs{display:flex;gap:6px}
+.tabs button{background:transparent;color:var(--muted);border:1px solid transparent;
+  border-radius:var(--r);padding:7px 14px;cursor:pointer;font-size:13px}
+.tabs button.active{background:var(--panel2);color:var(--text);border-color:#2c3140}
+.panel{background:var(--panel);border:1px solid #232838;border-radius:var(--r);padding:16px;margin-bottom:10px}
+.total{font-size:34px;font-weight:600;margin-top:4px}
+.subtle{color:var(--muted);font-size:12.5px}
+.row{display:flex;align-items:center;gap:10px;padding:6px 0}
+.row .lbl{flex:0 0 220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.row .track{flex:1;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
+.row .bar{height:100%;background:var(--accent);border-radius:4px}
+.row .val{flex:0 0 68px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.badge{font-size:10.5px;padding:2px 7px;border-radius:999px;background:var(--panel2);
+  color:var(--muted);border:1px solid #2c3140;white-space:nowrap}
+.empty{color:var(--muted);padding:18px 0;text-align:center}
+button.primary{background:var(--accentdim);color:#fff;border:none;border-radius:8px;
+  padding:8px 16px;cursor:pointer;font-size:13px}
+button.primary:hover{background:var(--accent)}
+button.ghost{background:transparent;color:var(--muted);border:1px solid #2c3140;
+  border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
+button.ghost:hover{color:var(--over);border-color:var(--over)}
+input,select{background:var(--panel2);border:1px solid #2c3140;color:var(--text);
+  border-radius:8px;padding:7px 10px;font-size:13px}
+input:focus,select:focus{outline:1px solid var(--accentdim)}
+.form-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lp{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:6px}
+.lp-fill{height:100%;border-radius:3px}
+.err{color:var(--over);font-size:13px;margin-top:8px}
+code{background:var(--panel2);padding:5px 10px;border-radius:8px;font-size:13px;user-select:all}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <h1>FocusLens</h1>
+    <nav class="tabs">
+      <button id="tab-today" class="active" onclick="show('today')">Today</button>
+      <button id="tab-limits" onclick="show('limits')">Limits</button>
+      <button id="tab-settings" onclick="show('settings')">Settings</button>
+    </nav>
+  </div>
+
+  <!-- TODAY -->
+  <div id="page-today">
+    <div id="summary-panel" class="panel"><div class="subtle">Loading…</div></div>
+    <h2>Top websites <span class="badge">from browser extension</span></h2>
+    <div id="domains-panel" class="panel"></div>
+    <h2>Top applications <span class="badge">from desktop agent</span></h2>
+    <div id="apps-panel" class="panel"></div>
+  </div>
+
+  <!-- LIMITS -->
+  <div id="page-limits" style="display:none">
+    <div class="panel">
+      <div class="form-row">
+        <select id="lkind"><option value="domain">Domain</option><option value="app">App</option></select>
+        <input id="lkey" placeholder="youtube.com" style="flex:1;min-width:160px"/>
+        <input id="lmins" type="number" value="60" min="1" max="1440" style="width:80px"/>
+        <span class="subtle">min / day</span>
+        <button class="primary" onclick="addLimit()">Add soft limit</button>
+      </div>
+      <div id="lerr" class="err"></div>
+    </div>
+    <h2>Active limits</h2>
+    <div id="limits-list"></div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div id="page-settings" style="display:none">
+    <div class="panel">
+      <h2 style="margin-top:0">Browser extension pairing</h2>
+      <p class="subtle" style="margin-bottom:10px">Paste this token into the FocusLens extension popup.</p>
+      <div class="row" style="padding:0;gap:12px">
+        <code id="token-display">…</code>
+        <button class="primary" onclick="copyToken()">Copy</button>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <h2 style="margin-top:0">Tracking</h2>
+      <div class="row" style="padding:0;justify-content:space-between">
+        <span id="pause-status" class="subtle">Loading…</span>
+        <button class="primary" id="pause-btn" onclick="togglePause()">…</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = '';
+
+function fmt(s) {
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm';
+  return sec + 's';
+}
+
+function show(page) {
+  ['today','limits','settings'].forEach(p => {
+    document.getElementById('page-' + p).style.display = p === page ? '' : 'none';
+    document.getElementById('tab-' + p).classList.toggle('active', p === page);
+  });
+  if (page === 'today') loadSummary();
+  if (page === 'limits') loadLimits();
+  if (page === 'settings') loadSettings();
+}
+
+// ---- TODAY ---------------------------------------------------------------
+
+function renderList(el, entries, emptyMsg) {
+  if (!entries.length) { el.innerHTML = `<div class="empty">${emptyMsg}</div>`; return; }
+  const max = entries[0].activeSecs || 1;
+  el.innerHTML = entries.slice(0, 15).map(e => `
+    <div class="row">
+      <span class="lbl" title="${e.key}">${e.label}</span>
+      <span class="badge">${e.source === 'extension' ? 'browser' : 'desktop'}</span>
+      <div class="track"><div class="bar" style="width:${Math.max(2,(e.activeSecs/max)*100)}%"></div></div>
+      <span class="val">${fmt(e.activeSecs)}</span>
+    </div>`).join('');
+}
+
+async function loadSummary() {
+  try {
+    const r = await fetch(BASE + '/api/summary');
+    const d = await r.json();
+    document.getElementById('summary-panel').innerHTML =
+      `<div class="subtle">${d.date} · active screen time</div>
+       <div class="total">${fmt(d.totalActiveSecs)}</div>`;
+    renderList(document.getElementById('domains-panel'), d.domains,
+      'No browser activity yet. Install and pair the FocusLens Chrome extension.');
+    renderList(document.getElementById('apps-panel'), d.apps,
+      'No activity yet — give it a minute.');
+  } catch(e) {
+    document.getElementById('summary-panel').innerHTML =
+      `<div class="err">Could not reach the FocusLens agent: ${e.message}</div>`;
+  }
+}
+
+// ---- LIMITS ---------------------------------------------------------------
+
+async function loadLimits() {
+  try {
+    const r = await fetch(BASE + '/api/limits');
+    const limits = await r.json();
+    const el = document.getElementById('limits-list');
+    if (!limits.length) {
+      el.innerHTML = '<div class="empty">No limits yet. Reminders fire at 50%, 80% and 100%.</div>';
+      return;
+    }
+    el.innerHTML = limits.map(l => {
+      const pct = Math.min(100, (l.usedSecsToday / l.limit_secs) * 100);
+      const color = pct >= 100 ? 'var(--over)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
+      return `<div class="panel">
+        <div class="row" style="padding:0">
+          <span style="flex:1;font-size:13px">${l.target_key}</span>
+          <span class="badge">${l.target_kind}</span>
+          <span class="badge">${l.limit_type} · ${l.period}</span>
+          <span class="val" style="flex:0 0 160px">${fmt(l.usedSecsToday)} / ${fmt(l.limit_secs)}</span>
+          <button class="ghost" onclick="deleteLimit(${l.id})">Remove</button>
+        </div>
+        <div class="lp"><div class="lp-fill" style="width:${pct}%;background:${color}"></div></div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function addLimit() {
+  const kind = document.getElementById('lkind').value;
+  const key = document.getElementById('lkey').value.trim().toLowerCase();
+  const mins = parseInt(document.getElementById('lmins').value, 10);
+  const errEl = document.getElementById('lerr');
+  errEl.textContent = '';
+  if (!key) { errEl.textContent = 'Enter a domain or app name.'; return; }
+  if (!mins || mins < 1) { errEl.textContent = 'Enter a valid number of minutes.'; return; }
+  try {
+    const r = await fetch(BASE + '/api/limits', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({target_kind:kind, target_key:key, period:'daily',
+        limit_secs: mins * 60, limit_type:'soft', enabled:true})
+    });
+    if (!r.ok) { const d = await r.json(); errEl.textContent = d.error || 'Error'; return; }
+    document.getElementById('lkey').value = '';
+    loadLimits();
+  } catch(e) { errEl.textContent = String(e); }
+}
+
+async function deleteLimit(id) {
+  await fetch(BASE + '/api/limits/' + id, {method:'DELETE'});
+  loadLimits();
+}
+
+// ---- SETTINGS -------------------------------------------------------------
+
+let _paused = false;
+
+async function loadSettings() {
+  try {
+    const r = await fetch(BASE + '/api/settings');
+    const d = await r.json();
+    document.getElementById('token-display').textContent = d.pairingToken || '…';
+    _paused = d.paused;
+    updatePauseUI();
+  } catch(e) { console.error(e); }
+}
+
+function updatePauseUI() {
+  document.getElementById('pause-status').textContent =
+    'Tracking is ' + (_paused ? 'paused' : 'running');
+  document.getElementById('pause-btn').textContent = _paused ? 'Resume' : 'Pause';
+}
+
+async function togglePause() {
+  _paused = !_paused;
+  updatePauseUI();
+  await fetch(BASE + '/api/settings', {
+    method: 'POST',
+    headers: {'content-type':'application/json'},
+    body: JSON.stringify({paused: _paused})
+  });
+}
+
+function copyToken() {
+  const t = document.getElementById('token-display').textContent;
+  navigator.clipboard.writeText(t).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+// ---- init -----------------------------------------------------------------
+loadSummary();
+setInterval(loadSummary, 30000);
+</script>
+</body>
+</html>
