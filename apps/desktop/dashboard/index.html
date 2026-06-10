@@ -4,250 +4,566 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>FocusLens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,200;9..144,400&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
 <style>
-:root{--bg:#0f1117;--panel:#181b25;--panel2:#1f2330;--text:#e6e8ef;--muted:#8b90a1;
-  --accent:#818cf8;--accentdim:#4f46e5;--ok:#34d399;--warn:#fbbf24;--over:#f87171;--r:10px}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font:14px/1.5 "Segoe UI",system-ui,sans-serif}
-#app{max-width:860px;margin:0 auto;padding:24px 20px 60px}
-h1{font-size:20px}
-h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:28px 0 10px}
-.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
-.tabs{display:flex;gap:6px}
-.tabs button{background:transparent;color:var(--muted);border:1px solid transparent;
-  border-radius:var(--r);padding:7px 14px;cursor:pointer;font-size:13px}
-.tabs button.active{background:var(--panel2);color:var(--text);border-color:#2c3140}
-.panel{background:var(--panel);border:1px solid #232838;border-radius:var(--r);padding:16px;margin-bottom:10px}
-.total{font-size:34px;font-weight:600;margin-top:4px}
-.subtle{color:var(--muted);font-size:12.5px}
-.row{display:flex;align-items:center;gap:10px;padding:6px 0}
-.row .lbl{flex:0 0 220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
-.row .track{flex:1;height:8px;background:var(--panel2);border-radius:4px;overflow:hidden}
-.row .bar{height:100%;background:var(--accent);border-radius:4px}
-.row .val{flex:0 0 68px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
-.badge{font-size:10.5px;padding:2px 7px;border-radius:999px;background:var(--panel2);
-  color:var(--muted);border:1px solid #2c3140;white-space:nowrap}
-.empty{color:var(--muted);padding:18px 0;text-align:center}
-button.primary{background:var(--accentdim);color:#fff;border:none;border-radius:8px;
-  padding:8px 16px;cursor:pointer;font-size:13px}
-button.primary:hover{background:var(--accent)}
-button.ghost{background:transparent;color:var(--muted);border:1px solid #2c3140;
-  border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
-button.ghost:hover{color:var(--over);border-color:var(--over)}
-input,select{background:var(--panel2);border:1px solid #2c3140;color:var(--text);
-  border-radius:8px;padding:7px 10px;font-size:13px}
-input:focus,select:focus{outline:1px solid var(--accentdim)}
-.form-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.lp{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:6px}
-.lp-fill{height:100%;border-radius:3px}
-.err{color:var(--over);font-size:13px;margin-top:8px}
-code{background:var(--panel2);padding:5px 10px;border-radius:8px;font-size:13px;user-select:all}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#F2EDE3;
+  --surf:#E9E3D7;
+  --surf-2:#E0D9CB;
+  --border:rgba(24,18,8,.09);
+  --ink:#1C1610;
+  --ink-2:#6B6256;
+  --ink-3:#A8A098;
+  --amber:#B26A0A;
+  --amber-bg:#F9EDDB;
+  --green:#1D6B3F;
+  --red:#B5280A;
+  --r:8px;
+}
+
+html{font-size:15px}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Figtree',system-ui,sans-serif;
+  font-weight:300;
+  min-height:100vh;
+}
+
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background-image:radial-gradient(circle,rgba(24,18,8,.07) 1px,transparent 1px);
+  background-size:28px 28px;
+  pointer-events:none;z-index:0;
+}
+
+#shell{position:relative;z-index:1;max-width:940px;margin:0 auto;padding:0 24px 80px}
+
+/* HEADER */
+#hdr{
+  display:flex;align-items:center;gap:20px;
+  padding:26px 0 22px;
+  border-bottom:1px solid var(--border);
+  margin-bottom:32px;
+}
+
+.logo{font-family:'Fraunces',serif;font-size:17px;font-weight:400;letter-spacing:-.01em;color:var(--ink);white-space:nowrap}
+.logo em{font-style:italic;color:var(--amber)}
+
+.nav{display:flex;gap:2px;flex:1;margin-left:10px}
+.nb{
+  background:none;border:none;cursor:pointer;
+  font-family:'Figtree',sans-serif;font-size:11.5px;font-weight:400;
+  color:var(--ink-3);padding:6px 13px;border-radius:var(--r);
+  letter-spacing:.06em;text-transform:uppercase;
+  transition:color .15s,background .15s;
+}
+.nb.on{color:var(--ink);background:var(--surf);font-weight:500}
+.nb:hover:not(.on){color:var(--ink-2)}
+
+.hdr-r{display:flex;align-items:center;gap:16px;margin-left:auto}
+.date-chip{font-family:'DM Mono',monospace;font-size:10.5px;color:var(--ink-3);letter-spacing:.07em}
+.stat-pill{display:flex;align-items:center;gap:6px;font-family:'DM Mono',monospace;font-size:10px;color:var(--ink-3);letter-spacing:.07em;text-transform:uppercase}
+.sdot{width:7px;height:7px;border-radius:50%;background:var(--green)}
+.sdot.live{animation:lpulse 2s ease-in-out infinite}
+.sdot.off{background:var(--ink-3)}
+@keyframes lpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.75)}}
+
+/* TODAY */
+#pg-today{display:block}
+
+.hero-row{
+  display:grid;grid-template-columns:1fr auto;
+  gap:32px;align-items:start;margin-bottom:36px;
+}
+
+.hero-eye{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
+.hero-num{
+  font-family:'Fraunces',serif;
+  font-size:clamp(54px,9vw,90px);
+  font-weight:200;line-height:.88;letter-spacing:-.03em;color:var(--ink);
+  font-variant-numeric:tabular-nums;
+}
+.hero-date{font-size:13px;color:var(--ink-2);margin-top:12px;font-family:'DM Mono',monospace;letter-spacing:.03em}
+
+/* Arc gauge */
+.gauge-wrap{display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:4px}
+.g-svg{overflow:visible}
+.g-track{fill:none;stroke:var(--surf-2);stroke-width:6;stroke-linecap:round}
+.g-fill{
+  fill:none;stroke:var(--amber);stroke-width:6;stroke-linecap:round;
+  stroke-dasharray:201.1;stroke-dashoffset:201.1;
+  transition:stroke-dashoffset 1.3s cubic-bezier(.25,.1,.25,1),stroke .3s;
+}
+.g-pct{fill:var(--ink);text-anchor:middle;font-family:'Fraunces',serif;font-weight:400;font-size:22px}
+.g-lbl{fill:var(--ink-3);text-anchor:middle;font-family:'Figtree',sans-serif;font-size:8.5px;letter-spacing:2px;text-transform:uppercase}
+.goal-btn{
+  background:none;border:none;cursor:pointer;
+  font-family:'DM Mono',monospace;font-size:10.5px;color:var(--ink-3);
+  padding:3px 8px;border-radius:6px;transition:background .15s,color .15s;
+}
+.goal-btn:hover{background:var(--surf);color:var(--ink-2)}
+
+/* Section rule */
+.s-rule{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.s-rule::before,.s-rule::after{content:'';flex:1;height:1px;background:var(--border)}
+.s-rl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+
+/* Usage rows */
+.u-list{margin-bottom:32px}
+.u-row{
+  display:grid;grid-template-columns:196px 1fr 70px;
+  align-items:center;gap:14px;padding:9px 0;
+  border-bottom:1px solid var(--border);
+  opacity:0;transform:translateY(5px);
+  animation:rIn .35s forwards;
+}
+@keyframes rIn{to{opacity:1;transform:none}}
+.u-nm{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.u-tr{height:3px;background:var(--surf-2);border-radius:99px;overflow:hidden}
+.u-bar{height:100%;background:var(--amber);border-radius:99px;width:0;transition:width .9s cubic-bezier(.25,.1,.25,1)}
+.u-bar.dom{background:var(--ink-2);opacity:.55}
+.u-tm{font-family:'DM Mono',monospace;font-size:11.5px;color:var(--ink-2);text-align:right;white-space:nowrap}
+.u-empty{padding:22px 0;text-align:center;color:var(--ink-3);font-size:13px}
+
+/* LIMITS */
+#pg-limits{display:none}
+
+.lf{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:22px}
+.lf-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+select,input[type=text],input[type=number]{
+  font-family:'Figtree',sans-serif;font-size:13px;
+  background:var(--bg);border:1px solid var(--border);color:var(--ink);
+  border-radius:var(--r);padding:8px 11px;outline:none;transition:border-color .15s;
+}
+select:focus,input:focus{border-color:var(--amber)}
+.btn-p{
+  font-family:'Figtree',sans-serif;font-size:13px;font-weight:500;
+  background:var(--ink);color:var(--bg);border:none;border-radius:var(--r);
+  padding:8px 16px;cursor:pointer;transition:opacity .15s;
+}
+.btn-p:hover{opacity:.82}
+.btn-g{
+  font-family:'Figtree',sans-serif;font-size:12px;
+  background:none;color:var(--ink-3);border:1px solid var(--border);
+  border-radius:var(--r);padding:5px 10px;cursor:pointer;transition:color .15s,border-color .15s;
+}
+.btn-g:hover{color:var(--red);border-color:var(--red)}
+.err{font-size:12px;color:var(--red);margin-top:8px}
+
+.lim-card{background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:8px}
+.lim-r{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.lim-key{font-size:14px;font-weight:500;flex:1;min-width:80px}
+.badge{font-family:'DM Mono',monospace;font-size:10px;padding:2px 7px;border-radius:99px;background:var(--surf-2);color:var(--ink-3);letter-spacing:.04em}
+.lim-used{font-family:'DM Mono',monospace;font-size:11px;color:var(--ink-2);white-space:nowrap}
+.lim-prog{height:4px;background:var(--surf-2);border-radius:99px;overflow:hidden}
+.lim-fill{height:100%;border-radius:99px;transition:width .8s cubic-bezier(.25,.1,.25,1)}
+
+/* SETTINGS */
+#pg-settings{display:none}
+
+.scard{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.slbl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
+.srow{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);gap:16px}
+.srow:last-child{border-bottom:none;padding-bottom:0}
+.srow-t{font-size:13.5px;font-weight:500}
+.srow-s{font-size:12px;color:var(--ink-3);margin-top:2px}
+
+code.tok{
+  font-family:'DM Mono',monospace;font-size:13px;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--r);
+  padding:8px 12px;flex:1;user-select:all;color:var(--ink-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+.tog{
+  width:40px;height:22px;background:var(--surf-2);border-radius:99px;
+  position:relative;cursor:pointer;border:none;flex-shrink:0;transition:background .2s;
+}
+.tog.on{background:var(--green)}
+.tog::after{
+  content:'';position:absolute;width:16px;height:16px;background:white;
+  border-radius:50%;top:3px;left:3px;transition:transform .2s;
+  box-shadow:0 1px 3px rgba(0,0,0,.18);
+}
+.tog.on::after{transform:translateX(18px)}
+
+/* Feature roadmap cards */
+.feat-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.feat-c{
+  background:var(--surf);border:1px solid var(--border);border-radius:10px;
+  padding:14px 15px;position:relative;overflow:hidden;
+}
+.feat-c::after{
+  content:attr(data-n);position:absolute;top:-14px;right:5px;
+  font-family:'Fraunces',serif;font-size:58px;font-weight:200;
+  color:var(--border);line-height:1;pointer-events:none;
+}
+.feat-n{font-size:12.5px;font-weight:500;margin-bottom:3px;color:var(--ink)}
+.feat-d{font-size:11.5px;color:var(--ink-2);line-height:1.45}
+
+/* QR MODAL */
+.qr-back{
+  position:fixed;inset:0;background:rgba(24,18,8,.52);z-index:200;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+  backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);
+}
+.qr-back.open{opacity:1;pointer-events:auto}
+.qr-box{
+  background:var(--bg);border:1px solid var(--border);border-radius:18px;padding:30px;
+  width:320px;max-width:90vw;text-align:center;
+  transform:translateY(10px);transition:transform .2s;
+  box-shadow:0 24px 64px rgba(24,18,8,.16);
+}
+.qr-back.open .qr-box{transform:none}
+.qr-t{font-family:'Fraunces',serif;font-size:20px;font-weight:400;margin-bottom:6px}
+.qr-s{font-size:12px;color:var(--ink-2);line-height:1.55;margin-bottom:22px}
+#qr-cv{border-radius:10px;margin:0 auto 18px;display:block}
+.qr-url{
+  font-family:'DM Mono',monospace;font-size:11px;color:var(--ink-3);
+  background:var(--surf);border-radius:var(--r);padding:8px 12px;
+  margin-bottom:20px;word-break:break-all;letter-spacing:.02em;
+}
+.qr-cl{
+  font-family:'Figtree',sans-serif;font-size:13px;
+  background:var(--surf);color:var(--ink-2);border:1px solid var(--border);
+  border-radius:var(--r);padding:8px 22px;cursor:pointer;transition:background .15s;
+}
+.qr-cl:hover{background:var(--surf-2)}
+
+/* RESPONSIVE */
+@media(max-width:620px){
+  .hero-row{grid-template-columns:1fr}
+  .gauge-wrap{display:none}
+  .u-row{grid-template-columns:1fr 60px}
+  .u-tr{display:none}
+  .feat-grid{grid-template-columns:1fr}
+  .lim-r{gap:6px}
+}
 </style>
 </head>
 <body>
-<div id="app">
-  <div class="topbar">
-    <h1>FocusLens</h1>
-    <nav class="tabs">
-      <button id="tab-today" class="active" onclick="show('today')">Today</button>
-      <button id="tab-limits" onclick="show('limits')">Limits</button>
-      <button id="tab-settings" onclick="show('settings')">Settings</button>
+<div id="shell">
+
+  <header id="hdr">
+    <div class="logo">Focus<em>Lens</em></div>
+    <nav class="nav">
+      <button class="nb on" id="t-today" onclick="show('today')">Today</button>
+      <button class="nb" id="t-limits" onclick="show('limits')">Limits</button>
+      <button class="nb" id="t-settings" onclick="show('settings')">Settings</button>
     </nav>
-  </div>
+    <div class="hdr-r">
+      <span class="date-chip" id="date-chip"></span>
+      <div class="stat-pill">
+        <div class="sdot live" id="sdot"></div>
+        <span id="stat-txt">tracking</span>
+      </div>
+    </div>
+  </header>
 
   <!-- TODAY -->
-  <div id="page-today">
-    <div id="summary-panel" class="panel"><div class="subtle">Loading…</div></div>
-    <h2>Top websites <span class="badge">from browser extension</span></h2>
-    <div id="domains-panel" class="panel"></div>
-    <h2>Top applications <span class="badge">from desktop agent</span></h2>
-    <div id="apps-panel" class="panel"></div>
+  <div id="pg-today">
+    <div class="hero-row">
+      <div>
+        <div class="hero-eye">Active screen time · today</div>
+        <div class="hero-num" id="hero-num">—</div>
+        <div class="hero-date" id="hero-date">Loading…</div>
+      </div>
+      <div class="gauge-wrap">
+        <svg class="g-svg" width="164" height="96" viewBox="0 0 164 96">
+          <path class="g-track" d="M 18,82 A 64,64 0 0,0 146,82"/>
+          <path class="g-fill" id="g-fill" d="M 18,82 A 64,64 0 0,0 146,82"/>
+          <text class="g-pct" id="g-pct" x="82" y="62">—%</text>
+          <text class="g-lbl" x="82" y="78">of goal</text>
+        </svg>
+        <button class="goal-btn" onclick="editGoal()">goal: <span id="goal-sp">8h</span></button>
+      </div>
+    </div>
+
+    <div class="s-rule"><span class="s-rl">Applications</span></div>
+    <div class="u-list" id="apps-list"></div>
+
+    <div class="s-rule"><span class="s-rl">Websites · via extension</span></div>
+    <div class="u-list" id="doms-list"></div>
   </div>
 
   <!-- LIMITS -->
-  <div id="page-limits" style="display:none">
-    <div class="panel">
-      <div class="form-row">
+  <div id="pg-limits">
+    <div class="lf">
+      <div class="lf-row">
         <select id="lkind"><option value="domain">Domain</option><option value="app">App</option></select>
-        <input id="lkey" placeholder="youtube.com" style="flex:1;min-width:160px"/>
-        <input id="lmins" type="number" value="60" min="1" max="1440" style="width:80px"/>
-        <span class="subtle">min / day</span>
-        <button class="primary" onclick="addLimit()">Add soft limit</button>
+        <input id="lkey" type="text" placeholder="youtube.com" style="flex:1;min-width:140px"/>
+        <input id="lmins" type="number" value="60" min="1" max="1440" style="width:78px"/>
+        <span style="font-size:12px;color:var(--ink-3);white-space:nowrap">min / day</span>
+        <button class="btn-p" onclick="addLimit()">Add limit</button>
       </div>
-      <div id="lerr" class="err"></div>
+      <div class="err" id="lerr"></div>
     </div>
-    <h2>Active limits</h2>
-    <div id="limits-list"></div>
+    <div id="lims-list"></div>
   </div>
 
   <!-- SETTINGS -->
-  <div id="page-settings" style="display:none">
-    <div class="panel">
-      <h2 style="margin-top:0">Browser extension pairing</h2>
-      <p class="subtle" style="margin-bottom:10px">Paste this token into the FocusLens extension popup.</p>
-      <div class="row" style="padding:0;gap:12px">
-        <code id="token-display">…</code>
-        <button class="primary" onclick="copyToken()">Copy</button>
+  <div id="pg-settings">
+
+    <div class="scard">
+      <div class="slbl">Extension pairing token</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <code class="tok" id="tok-disp">…</code>
+        <button class="btn-p" onclick="copyTok(event)">Copy</button>
       </div>
     </div>
-    <div class="panel" style="margin-top:12px">
-      <h2 style="margin-top:0">Tracking</h2>
-      <div class="row" style="padding:0;justify-content:space-between">
-        <span id="pause-status" class="subtle">Loading…</span>
-        <button class="primary" id="pause-btn" onclick="togglePause()">…</button>
+
+    <div class="scard">
+      <div class="slbl">Tracking</div>
+      <div class="srow" style="padding-top:0">
+        <div>
+          <div class="srow-t" id="pause-t">Tracking is active</div>
+          <div class="srow-s">Pause to stop recording app and website time</div>
+        </div>
+        <button class="tog" id="pause-tog" onclick="togglePause()"></button>
       </div>
     </div>
+
+    <div class="scard">
+      <div class="slbl">Mobile companion</div>
+      <div class="srow" style="padding-top:0;border:none;padding-bottom:0">
+        <div>
+          <div class="srow-t">Open on your phone</div>
+          <div class="srow-s">Same Wi-Fi required — scan QR to view the dashboard on mobile</div>
+        </div>
+        <button class="btn-p" onclick="openQR()">Show QR</button>
+      </div>
+    </div>
+
+    <div class="s-rule" style="margin-top:28px;margin-bottom:18px"><span class="s-rl">Roadmap · upcoming features</span></div>
+    <div class="feat-grid">
+      <div class="feat-c" data-n="1">
+        <div class="feat-n">Focus Sessions</div>
+        <div class="feat-d">Pomodoro-style timed blocks with per-session app logging and daily goal tracking.</div>
+      </div>
+      <div class="feat-c" data-n="2">
+        <div class="feat-n">Weekly Heatmap</div>
+        <div class="feat-d">GitHub-style calendar showing hourly usage intensity across 90 days of history.</div>
+      </div>
+      <div class="feat-c" data-n="3">
+        <div class="feat-n">Categories</div>
+        <div class="feat-d">Tag apps and domains as Deep Work, Communication, or Distraction. Score your day.</div>
+      </div>
+      <div class="feat-c" data-n="4">
+        <div class="feat-n">Streaks</div>
+        <div class="feat-d">Consecutive days under your limits. Protect your streak to build lasting habits.</div>
+      </div>
+      <div class="feat-c" data-n="5">
+        <div class="feat-n">Weekly Digest</div>
+        <div class="feat-d">Auto-generated Monday report: totals, top apps, limit violations, week-over-week trends.</div>
+      </div>
+      <div class="feat-c" data-n="6">
+        <div class="feat-n">Schedule</div>
+        <div class="feat-d">Auto-pause tracking outside working hours. Set your day start and end times.</div>
+      </div>
+      <div class="feat-c" data-n="7">
+        <div class="feat-n">Trend Comparison</div>
+        <div class="feat-d">Today vs yesterday, this week vs last. See patterns before they become habits.</div>
+      </div>
+      <div class="feat-c" data-n="8">
+        <div class="feat-n">Mobile App</div>
+        <div class="feat-d">iOS/Android companion that syncs over local Wi-Fi — zero cloud required.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- QR MODAL -->
+<div class="qr-back" id="qr-back" onclick="closeQR(event)">
+  <div class="qr-box">
+    <div class="qr-t">Open on your phone</div>
+    <div class="qr-s">Connect to the same Wi-Fi network,<br>then scan to open the dashboard.</div>
+    <canvas id="qr-cv"></canvas>
+    <div class="qr-url" id="qr-url">Detecting local IP…</div>
+    <button class="qr-cl" onclick="closeQR(null,true)">Done</button>
   </div>
 </div>
 
 <script>
-const BASE = '';
+const ARC = 201.1;
+let _paused = false;
+let _goal = parseFloat(localStorage.getItem('fl_goal') || '8');
 
 function fmt(s) {
   s = Math.max(0, Math.round(s));
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  if (h > 0) return h + 'h ' + m + 'm';
-  if (m > 0) return m + 'm';
-  return sec + 's';
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h && m ? h+'h '+m+'m' : h ? h+'h' : m ? m+'m' : s+'s';
 }
 
-function show(page) {
+(function() {
+  const d = new Date();
+  const D = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  document.getElementById('date-chip').textContent = D[d.getDay()]+' · '+M[d.getMonth()]+' '+d.getDate();
+})();
+
+function show(pg) {
   ['today','limits','settings'].forEach(p => {
-    document.getElementById('page-' + p).style.display = p === page ? '' : 'none';
-    document.getElementById('tab-' + p).classList.toggle('active', p === page);
+    document.getElementById('pg-'+p).style.display = p===pg ? 'block' : 'none';
+    document.getElementById('t-'+p).classList.toggle('on', p===pg);
   });
-  if (page === 'today') loadSummary();
-  if (page === 'limits') loadLimits();
-  if (page === 'settings') loadSettings();
+  if (pg==='today') loadToday();
+  if (pg==='limits') loadLimits();
+  if (pg==='settings') loadSettings();
 }
 
-// ---- TODAY ---------------------------------------------------------------
-
-function renderList(el, entries, emptyMsg) {
-  if (!entries.length) { el.innerHTML = `<div class="empty">${emptyMsg}</div>`; return; }
-  const max = entries[0].activeSecs || 1;
-  el.innerHTML = entries.slice(0, 15).map(e => `
-    <div class="row">
-      <span class="lbl" title="${e.key}">${e.label}</span>
-      <span class="badge">${e.source === 'extension' ? 'browser' : 'desktop'}</span>
-      <div class="track"><div class="bar" style="width:${Math.max(2,(e.activeSecs/max)*100)}%"></div></div>
-      <span class="val">${fmt(e.activeSecs)}</span>
-    </div>`).join('');
+function setGauge(pct) {
+  const f = document.getElementById('g-fill');
+  const l = document.getElementById('g-pct');
+  f.style.strokeDashoffset = ARC * (1 - Math.min(1, pct/100));
+  f.style.stroke = pct>=100 ? 'var(--red)' : pct>=80 ? '#C4890A' : 'var(--amber)';
+  l.textContent = Math.round(pct)+'%';
 }
 
-async function loadSummary() {
-  try {
-    const r = await fetch(BASE + '/api/summary');
-    const d = await r.json();
-    document.getElementById('summary-panel').innerHTML =
-      `<div class="subtle">${d.date} · active screen time</div>
-       <div class="total">${fmt(d.totalActiveSecs)}</div>`;
-    renderList(document.getElementById('domains-panel'), d.domains,
-      'No browser activity yet. Install and pair the FocusLens Chrome extension.');
-    renderList(document.getElementById('apps-panel'), d.apps,
-      'No activity yet — give it a minute.');
-  } catch(e) {
-    document.getElementById('summary-panel').innerHTML =
-      `<div class="err">Could not reach the FocusLens agent: ${e.message}</div>`;
+function editGoal() {
+  const v = prompt('Daily goal in hours:', _goal);
+  if (v !== null && !isNaN(+v) && +v > 0) {
+    _goal = +v;
+    localStorage.setItem('fl_goal', _goal);
+    document.getElementById('goal-sp').textContent = _goal+'h';
+    loadToday();
   }
 }
 
-// ---- LIMITS ---------------------------------------------------------------
+async function loadToday() {
+  try {
+    const d = await (await fetch('/api/summary')).json();
+    document.getElementById('hero-num').textContent = fmt(d.totalActiveSecs);
+    document.getElementById('hero-date').textContent = d.date;
+    setGauge(_goal > 0 ? (d.totalActiveSecs/(_goal*3600))*100 : 0);
+    document.getElementById('goal-sp').textContent = _goal+'h';
+    renderList('apps-list', d.apps, false, 'No desktop activity yet.');
+    renderList('doms-list', d.domains, true, 'No browser data — install and pair the Chrome extension.');
+  } catch {
+    document.getElementById('hero-num').textContent = '—';
+    document.getElementById('hero-date').textContent = 'Agent offline';
+  }
+}
+
+function renderList(id, items, dom, empty) {
+  const el = document.getElementById(id);
+  if (!items?.length) { el.innerHTML = `<div class="u-empty">${empty}</div>`; return; }
+  const mx = Math.max(...items.map(x=>x.activeSecs), 1);
+  el.innerHTML = items.slice(0,12).map((e,i)=>`
+    <div class="u-row" style="animation-delay:${i*42}ms">
+      <span class="u-nm" title="${e.key}">${e.label||e.key}</span>
+      <div class="u-tr"><div class="u-bar${dom?' dom':''}" data-w="${(e.activeSecs/mx)*100}"></div></div>
+      <span class="u-tm">${fmt(e.activeSecs)}</span>
+    </div>`).join('');
+  requestAnimationFrame(()=>
+    el.querySelectorAll('.u-bar').forEach(b=>setTimeout(()=>b.style.width=b.dataset.w+'%',80)));
+}
 
 async function loadLimits() {
   try {
-    const r = await fetch(BASE + '/api/limits');
-    const limits = await r.json();
-    const el = document.getElementById('limits-list');
-    if (!limits.length) {
-      el.innerHTML = '<div class="empty">No limits yet. Reminders fire at 50%, 80% and 100%.</div>';
+    const lims = await (await fetch('/api/limits')).json();
+    const el = document.getElementById('lims-list');
+    if (!lims.length) {
+      el.innerHTML = '<div class="u-empty">No limits yet. Notifications fire at 50%, 80% and 100%.</div>';
       return;
     }
-    el.innerHTML = limits.map(l => {
-      const pct = Math.min(100, (l.usedSecsToday / l.limit_secs) * 100);
-      const color = pct >= 100 ? 'var(--over)' : pct >= 80 ? 'var(--warn)' : 'var(--ok)';
-      return `<div class="panel">
-        <div class="row" style="padding:0">
-          <span style="flex:1;font-size:13px">${l.target_key}</span>
+    el.innerHTML = lims.map(l=>{
+      const p = Math.min(100,(l.usedSecsToday/l.limit_secs)*100);
+      const c = p>=100?'var(--red)':p>=80?'#C4890A':'var(--green)';
+      return `<div class="lim-card">
+        <div class="lim-r">
+          <span class="lim-key">${l.target_key}</span>
           <span class="badge">${l.target_kind}</span>
           <span class="badge">${l.limit_type} · ${l.period}</span>
-          <span class="val" style="flex:0 0 160px">${fmt(l.usedSecsToday)} / ${fmt(l.limit_secs)}</span>
-          <button class="ghost" onclick="deleteLimit(${l.id})">Remove</button>
+          <span class="lim-used">${fmt(l.usedSecsToday)} / ${fmt(l.limit_secs)}</span>
+          <button class="btn-g" onclick="delLim(${l.id})">Remove</button>
         </div>
-        <div class="lp"><div class="lp-fill" style="width:${pct}%;background:${color}"></div></div>
+        <div class="lim-prog"><div class="lim-fill" style="width:${p}%;background:${c}"></div></div>
       </div>`;
     }).join('');
-  } catch(e) { console.error(e); }
+  } catch(e){console.error(e)}
 }
 
 async function addLimit() {
   const kind = document.getElementById('lkind').value;
-  const key = document.getElementById('lkey').value.trim().toLowerCase();
+  const key  = document.getElementById('lkey').value.trim().toLowerCase();
   const mins = parseInt(document.getElementById('lmins').value, 10);
-  const errEl = document.getElementById('lerr');
-  errEl.textContent = '';
-  if (!key) { errEl.textContent = 'Enter a domain or app name.'; return; }
-  if (!mins || mins < 1) { errEl.textContent = 'Enter a valid number of minutes.'; return; }
-  try {
-    const r = await fetch(BASE + '/api/limits', {
-      method: 'POST',
-      headers: {'content-type':'application/json'},
-      body: JSON.stringify({target_kind:kind, target_key:key, period:'daily',
-        limit_secs: mins * 60, limit_type:'soft', enabled:true})
-    });
-    if (!r.ok) { const d = await r.json(); errEl.textContent = d.error || 'Error'; return; }
-    document.getElementById('lkey').value = '';
-    loadLimits();
-  } catch(e) { errEl.textContent = String(e); }
-}
-
-async function deleteLimit(id) {
-  await fetch(BASE + '/api/limits/' + id, {method:'DELETE'});
+  const err  = document.getElementById('lerr');
+  err.textContent = '';
+  if (!key) { err.textContent = 'Enter a domain or app name.'; return; }
+  if (!mins||mins<1) { err.textContent = 'Minutes must be ≥ 1.'; return; }
+  const r = await fetch('/api/limits',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({target_kind:kind,target_key:key,period:'daily',
+      limit_secs:mins*60,limit_type:'soft',enabled:true})
+  });
+  if (!r.ok){err.textContent=(await r.json()).error||'Error';return}
+  document.getElementById('lkey').value='';
   loadLimits();
 }
 
-// ---- SETTINGS -------------------------------------------------------------
-
-let _paused = false;
+async function delLim(id) {
+  await fetch('/api/limits/'+id,{method:'DELETE'});
+  loadLimits();
+}
 
 async function loadSettings() {
   try {
-    const r = await fetch(BASE + '/api/settings');
-    const d = await r.json();
-    document.getElementById('token-display').textContent = d.pairingToken || '…';
+    const d = await (await fetch('/api/settings')).json();
+    document.getElementById('tok-disp').textContent = d.pairingToken||'—';
     _paused = d.paused;
-    updatePauseUI();
-  } catch(e) { console.error(e); }
+    syncPause();
+  } catch(e){console.error(e)}
 }
 
-function updatePauseUI() {
-  document.getElementById('pause-status').textContent =
-    'Tracking is ' + (_paused ? 'paused' : 'running');
-  document.getElementById('pause-btn').textContent = _paused ? 'Resume' : 'Pause';
+function syncPause() {
+  document.getElementById('pause-t').textContent = 'Tracking is '+(_paused?'paused':'active');
+  document.getElementById('pause-tog').classList.toggle('on',_paused);
+  document.getElementById('sdot').className = 'sdot '+(_paused?'off':'live');
+  document.getElementById('stat-txt').textContent = _paused?'paused':'tracking';
 }
 
 async function togglePause() {
-  _paused = !_paused;
-  updatePauseUI();
-  await fetch(BASE + '/api/settings', {
-    method: 'POST',
-    headers: {'content-type':'application/json'},
-    body: JSON.stringify({paused: _paused})
-  });
+  _paused = !_paused; syncPause();
+  await fetch('/api/settings',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({paused:_paused})});
 }
 
-function copyToken() {
-  const t = document.getElementById('token-display').textContent;
-  navigator.clipboard.writeText(t).then(() => {
-    const btn = event.target;
-    btn.textContent = 'Copied!';
-    setTimeout(() => btn.textContent = 'Copy', 1500);
-  });
+function copyTok(e) {
+  navigator.clipboard.writeText(document.getElementById('tok-disp').textContent)
+    .then(()=>{e.target.textContent='Copied!';setTimeout(()=>e.target.textContent='Copy',1600)});
 }
 
-// ---- init -----------------------------------------------------------------
-loadSummary();
-setInterval(loadSummary, 30000);
+async function openQR() {
+  document.getElementById('qr-back').classList.add('open');
+  let url = location.origin+'/';
+  try {
+    const d = await (await fetch('/api/network-info')).json();
+    if (d.localIp && d.localIp!=='127.0.0.1')
+      url = 'http://'+d.localIp+':'+d.port+'/';
+  } catch {}
+  document.getElementById('qr-url').textContent = url;
+  try {
+    QRCode.toCanvas(document.getElementById('qr-cv'), url,
+      {width:210,margin:2,color:{dark:'#1C1610',light:'#F2EDE3'}});
+  } catch { document.getElementById('qr-cv').style.display='none'; }
+}
+
+function closeQR(e, force) {
+  if (force||e?.target===document.getElementById('qr-back'))
+    document.getElementById('qr-back').classList.remove('open');
+}
+
+loadToday();
+setInterval(loadToday, 30000);
 </script>
 </body>
 </html>

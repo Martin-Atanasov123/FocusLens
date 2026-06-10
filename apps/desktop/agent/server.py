@@ -26,7 +26,10 @@ TOKEN_HEADER = "x-focuslens-token"
 DASHBOARD_HTML = Path(__file__).parent.parent / "dashboard" / "index.html"
 
 
-def create_app(store, is_paused: threading.Event) -> Flask:
+MOBILE_HTML = Path(__file__).parent.parent / "dashboard" / "mobile.html"
+
+
+def create_app(store, is_paused: threading.Event, port: int = 48732) -> Flask:
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
 
@@ -52,6 +55,22 @@ def create_app(store, is_paused: threading.Event) -> Flask:
     @app.route("/")
     def dashboard():
         return send_file(DASHBOARD_HTML)
+
+    @app.route("/mobile")
+    def mobile():
+        return send_file(MOBILE_HTML)
+
+    @app.route("/api/network-info")
+    def api_network_info():
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except Exception:
+            local_ip = "127.0.0.1"
+        return jsonify(localIp=local_ip, port=port)
 
     # ---- token guard -------------------------------------------------------
 

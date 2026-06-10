@@ -45,7 +45,7 @@ def main() -> None:
     is_paused = threading.Event()
 
     # ---- Flask thread -------------------------------------------------------
-    flask_app = create_app(store, is_paused)
+    flask_app = create_app(store, is_paused, port=PORT)
 
     def run_flask():
         import logging

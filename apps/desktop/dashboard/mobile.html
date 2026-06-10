@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>FocusLens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,200;9..144,400&family=DM+Mono:wght@400&family=Figtree:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F2EDE3;--surf:#E9E3D7;--surf-2:#E0D9CB;
+  --border:rgba(24,18,8,.09);--ink:#1C1610;--ink-2:#6B6256;--ink-3:#A8A098;
+  --amber:#B26A0A;--green:#1D6B3F;--red:#B5280A;
+}
+html{font-size:16px}
+body{
+  background:var(--bg);color:var(--ink);
+  font-family:'Figtree',system-ui,sans-serif;font-weight:300;
+  min-height:100dvh;padding:0 0 env(safe-area-inset-bottom,16px);
+}
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:radial-gradient(circle,rgba(24,18,8,.07) 1px,transparent 1px);
+  background-size:28px 28px;pointer-events:none;z-index:0;
+}
+
+.wrap{position:relative;z-index:1;max-width:430px;margin:0 auto;padding:0 20px}
+
+/* header */
+.hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding-top:max(20px,env(safe-area-inset-top));
+  padding-bottom:18px;
+  border-bottom:1px solid var(--border);margin-bottom:28px;
+}
+.logo{font-family:'Fraunces',serif;font-size:17px;font-weight:400;letter-spacing:-.01em}
+.logo em{font-style:italic;color:var(--amber)}
+.live-dot{
+  width:8px;height:8px;border-radius:50%;background:var(--green);
+  animation:lp 2s ease-in-out infinite;
+}
+@keyframes lp{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+
+/* hero */
+.hero{text-align:center;padding:20px 0 32px}
+.hero-eye{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin-bottom:14px}
+.hero-num{font-family:'Fraunces',serif;font-size:clamp(64px,18vw,90px);font-weight:200;line-height:.88;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.hero-date{font-family:'DM Mono',monospace;font-size:12px;color:var(--ink-2);margin-top:14px;letter-spacing:.04em}
+
+/* arc */
+.arc-wrap{display:flex;justify-content:center;margin:-10px 0 28px}
+.g-track{fill:none;stroke:var(--surf-2);stroke-width:7;stroke-linecap:round}
+.g-fill{fill:none;stroke:var(--amber);stroke-width:7;stroke-linecap:round;
+  stroke-dasharray:201.1;stroke-dashoffset:201.1;
+  transition:stroke-dashoffset 1.2s cubic-bezier(.25,.1,.25,1),stroke .3s}
+.g-pct{fill:var(--ink);text-anchor:middle;font-family:'Fraunces',serif;font-weight:400;font-size:22px}
+.g-lbl{fill:var(--ink-3);text-anchor:middle;font-family:'Figtree',sans-serif;font-size:9px;letter-spacing:2px;text-transform:uppercase}
+
+/* section */
+.s-rule{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.s-rule::before,.s-rule::after{content:'';flex:1;height:1px;background:var(--border)}
+.s-rl{font-family:'DM Mono',monospace;font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+
+/* rows */
+.u-row{
+  display:flex;align-items:center;gap:12px;
+  padding:10px 0;border-bottom:1px solid var(--border);
+}
+.u-nm{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.u-tr{height:3px;width:80px;flex-shrink:0;background:var(--surf-2);border-radius:99px;overflow:hidden}
+.u-bar{height:100%;background:var(--amber);border-radius:99px;width:0;transition:width .9s cubic-bezier(.25,.1,.25,1)}
+.u-bar.dom{background:var(--ink-2);opacity:.55}
+.u-tm{font-family:'DM Mono',monospace;font-size:12px;color:var(--ink-2);text-align:right;white-space:nowrap;min-width:54px}
+.u-empty{padding:20px 0;text-align:center;color:var(--ink-3);font-size:13.5px;line-height:1.5}
+
+/* footer */
+.footer{
+  margin-top:36px;padding:16px 0;
+  border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.footer-note{font-size:11.5px;color:var(--ink-3)}
+.desktop-link{
+  font-family:'DM Mono',monospace;font-size:11px;color:var(--amber);
+  text-decoration:none;letter-spacing:.04em;
+}
+
+/* refresh badge */
+.refresh-badge{
+  display:flex;align-items:center;gap:6px;
+  font-family:'DM Mono',monospace;font-size:10px;color:var(--ink-3);
+  letter-spacing:.04em;margin-bottom:28px;justify-content:center;
+}
+.rb-dot{width:5px;height:5px;border-radius:50%;background:var(--ink-3);opacity:.5}
+
+/* mobile notice */
+.notice{
+  background:var(--surf);border:1px solid var(--border);border-radius:10px;
+  padding:12px 14px;margin-bottom:24px;
+  font-size:12.5px;color:var(--ink-2);line-height:1.5;
+}
+.notice strong{font-weight:500;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div class="logo">Focus<em>Lens</em></div>
+    <div class="live-dot" id="ldot"></div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-eye">Active screen time · today</div>
+    <div class="hero-num" id="hero-num">—</div>
+    <div class="hero-date" id="hero-date">Loading…</div>
+  </div>
+
+  <div class="arc-wrap">
+    <svg width="164" height="96" viewBox="0 0 164 96" style="overflow:visible">
+      <path class="g-track" d="M 18,82 A 64,64 0 0,0 146,82"/>
+      <path class="g-fill" id="g-fill" d="M 18,82 A 64,64 0 0,0 146,82"/>
+      <text class="g-pct" id="g-pct" x="82" y="62">—%</text>
+      <text class="g-lbl" x="82" y="78">of 8h goal</text>
+    </svg>
+  </div>
+
+  <div class="notice">
+    <strong>Viewing desktop dashboard.</strong> Phone screen time tracking requires the mobile app — coming in a future version.
+  </div>
+
+  <div class="refresh-badge">
+    <div class="rb-dot"></div>
+    <span id="refresh-lbl">Auto-refreshing every 60s</span>
+  </div>
+
+  <div class="s-rule"><span class="s-rl">Applications</span></div>
+  <div id="apps-list" style="margin-bottom:28px"></div>
+
+  <div class="s-rule"><span class="s-rl">Websites · via extension</span></div>
+  <div id="doms-list" style="margin-bottom:28px"></div>
+
+  <div class="footer">
+    <span class="footer-note">FocusLens · local only</span>
+    <a class="desktop-link" href="/">Open full dashboard →</a>
+  </div>
+
+</div>
+<script>
+const ARC = 201.1;
+const GOAL_H = parseFloat(localStorage.getItem('fl_goal') || '8');
+
+function fmt(s) {
+  s = Math.max(0, Math.round(s));
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  return h&&m?h+'h '+m+'m':h?h+'h':m?m+'m':s+'s';
+}
+
+function renderList(id, items, dom, empty) {
+  const el = document.getElementById(id);
+  if (!items?.length) {
+    el.innerHTML = `<div class="u-empty">${empty}</div>`; return;
+  }
+  const mx = Math.max(...items.map(x=>x.activeSecs), 1);
+  el.innerHTML = items.slice(0,8).map(e=>`
+    <div class="u-row">
+      <span class="u-nm" title="${e.key}">${e.label||e.key}</span>
+      <div class="u-tr"><div class="u-bar${dom?' dom':''}" data-w="${(e.activeSecs/mx)*100}"></div></div>
+      <span class="u-tm">${fmt(e.activeSecs)}</span>
+    </div>`).join('');
+  requestAnimationFrame(()=>
+    el.querySelectorAll('.u-bar').forEach(b=>setTimeout(()=>b.style.width=b.dataset.w+'%',80)));
+}
+
+async function load() {
+  try {
+    const d = await (await fetch('/api/summary')).json();
+    document.getElementById('hero-num').textContent = fmt(d.totalActiveSecs);
+    document.getElementById('hero-date').textContent = d.date;
+    const f = document.getElementById('g-fill');
+    const pct = GOAL_H > 0 ? (d.totalActiveSecs/(GOAL_H*3600))*100 : 0;
+    f.style.strokeDashoffset = ARC*(1-Math.min(1,pct/100));
+    f.style.stroke = pct>=100?'#B5280A':pct>=80?'#C4890A':'#B26A0A';
+    document.getElementById('g-pct').textContent = Math.round(pct)+'%';
+    document.getElementById('ldot').style.background = '#1D6B3F';
+    renderList('apps-list', d.apps, false, 'No desktop activity yet.');
+    renderList('doms-list', d.domains, true, 'No browser data — extension not paired.');
+    const now = new Date();
+    document.getElementById('refresh-lbl').textContent =
+      'Updated '+now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+' · refreshes every 60s';
+  } catch {
+    document.getElementById('hero-num').textContent = '—';
+    document.getElementById('hero-date').textContent = 'Cannot reach agent';
+    document.getElementById('ldot').style.background = '#A8A098';
+  }
+}
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>
