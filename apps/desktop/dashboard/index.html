@@ -223,6 +223,13 @@ code.tok{
   box-shadow:0 24px 64px rgba(24,18,8,.16);
 }
 .qr-back.open .qr-box{transform:none}
+.qr-tabs{display:flex;gap:4px;background:var(--surf);border-radius:10px;padding:4px;margin-bottom:20px}
+.qr-tab{
+  flex:1;border:none;background:transparent;cursor:pointer;
+  font-family:'Figtree',sans-serif;font-size:12px;font-weight:500;color:var(--ink-3);
+  padding:8px 6px;border-radius:7px;transition:background .15s,color .15s;
+}
+.qr-tab.on{background:var(--bg);color:var(--ink);box-shadow:0 1px 3px rgba(24,18,8,.08)}
 .qr-t{font-family:'Fraunces',serif;font-size:20px;font-weight:400;margin-bottom:6px}
 .qr-s{font-size:12px;color:var(--ink-2);line-height:1.55;margin-bottom:22px}
 #qr-cv{border-radius:10px;overflow:hidden;margin:0 auto 18px;display:inline-block;line-height:0}
@@ -385,8 +392,12 @@ code.tok{
 <!-- QR MODAL -->
 <div class="qr-back" id="qr-back" onclick="closeQR(event)">
   <div class="qr-box">
-    <div class="qr-t">Open on your phone</div>
-    <div class="qr-s">Connect to the same Wi-Fi network,<br>then scan to open the dashboard.</div>
+    <div class="qr-tabs">
+      <button class="qr-tab on" id="qrtab-view" onclick="setQRMode('view')">View dashboard</button>
+      <button class="qr-tab" id="qrtab-pair" onclick="setQRMode('pair')">Pair phone app</button>
+    </div>
+    <div class="qr-t" id="qr-t">Open on your phone</div>
+    <div class="qr-s" id="qr-s">Connect to the same Wi-Fi network,<br>then scan to open the dashboard.</div>
     <div id="qr-cv"></div>
     <div class="qr-url" id="qr-url">Detecting local IP…</div>
     <button class="qr-cl" onclick="closeQR(null,true)">Done</button>
@@ -543,25 +554,62 @@ function copyTok(e) {
     .then(()=>{e.target.textContent='Copied!';setTimeout(()=>e.target.textContent='Copy',1600)});
 }
 
+let _qrMode = 'view';
+let _qrHost = null, _qrPort = 48732, _qrToken = '';
+
 async function openQR() {
   document.getElementById('qr-back').classList.add('open');
-  let url = location.origin+'/';
+  // Resolve local IP + token once per open.
   try {
     const d = await (await fetch('/api/network-info')).json();
-    if (d.localIp && d.localIp!=='127.0.0.1')
-      url = 'http://'+d.localIp+':'+d.port+'/';
+    _qrHost = (d.localIp && d.localIp!=='127.0.0.1') ? d.localIp : location.hostname;
+    _qrPort = d.port || 48732;
+  } catch { _qrHost = location.hostname; }
+  try {
+    const s = await (await fetch('/api/settings')).json();
+    _qrToken = s.pairingToken || '';
   } catch {}
-  document.getElementById('qr-url').textContent = url;
+  renderQR();
+}
+
+function setQRMode(mode) {
+  _qrMode = mode;
+  document.getElementById('qrtab-view').classList.toggle('on', mode==='view');
+  document.getElementById('qrtab-pair').classList.toggle('on', mode==='pair');
+  renderQR();
+}
+
+function renderQR() {
+  const host = _qrHost || location.hostname;
+  let payload, title, sub;
+
+  if (_qrMode === 'pair') {
+    payload = 'focuslens://pair?host='+encodeURIComponent(host)
+            + '&port='+_qrPort
+            + '&token='+encodeURIComponent(_qrToken);
+    title = 'Pair the phone app';
+    sub = 'Install the FocusLens Android app, then scan<br>this code — host &amp; token fill in automatically.';
+  } else {
+    payload = 'http://'+host+':'+_qrPort+'/';
+    title = 'Open on your phone';
+    sub = 'Connect to the same Wi-Fi network,<br>then scan to open the dashboard.';
+  }
+
+  document.getElementById('qr-t').textContent = title;
+  document.getElementById('qr-s').innerHTML = sub;
+  document.getElementById('qr-url').textContent =
+    _qrMode === 'pair' ? (host+':'+_qrPort+' · token '+(_qrToken? _qrToken.slice(0,6)+'…':'—')) : payload;
+
   const el = document.getElementById('qr-cv');
   el.innerHTML = '';
   if (typeof QRCode !== 'undefined') {
     new QRCode(el, {
-      text: url, width: 210, height: 210,
+      text: payload, width: 210, height: 210,
       colorDark: '#1C1610', colorLight: '#F2EDE3',
       correctLevel: QRCode.CorrectLevel.H
     });
   } else {
-    el.innerHTML = '<p style="font-size:12px;color:var(--ink-2);padding:20px 0">QR library unavailable.<br>Open this URL on your phone:</p>';
+    el.innerHTML = '<p style="font-size:12px;color:var(--ink-2);padding:20px 0">QR library unavailable.</p>';
   }
 }
 

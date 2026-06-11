@@ -140,6 +140,30 @@ class Store:
             )
             self._conn.commit()
 
+    def replace_usage(self, source: str, kind: str, records: list[UsageRecord]) -> None:
+        """Upsert that REPLACES active_secs instead of accumulating.
+
+        Used for snapshot sources (e.g. the Android companion) that report a
+        running daily total against a fixed bucket — repeated syncs overwrite
+        the same row, so totals stay correct without double-counting.
+        """
+        if not records:
+            return
+        with self._lock:
+            self._conn.executemany(
+                """INSERT INTO usage_minutes
+                       (bucket_ts, source, kind, key, label, active_secs, idle_secs)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT (bucket_ts, source, kind, key) DO UPDATE SET
+                       active_secs = excluded.active_secs,
+                       label       = COALESCE(excluded.label, label)""",
+                [
+                    (r.bucket_ts, source, kind, r.key, r.label, r.active_secs, r.idle_secs)
+                    for r in records
+                ],
+            )
+            self._conn.commit()
+
     def usage_total(self, kind: str, key: str, start: int, end: int) -> int:
         with self._lock:
             row = self._conn.execute(

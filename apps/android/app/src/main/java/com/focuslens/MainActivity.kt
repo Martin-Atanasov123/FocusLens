@@ -17,18 +17,23 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
+    private val pairing = mutableStateOf<Pair<String, String>?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val collector = UsageCollector(this)
+        handlePairLink(intent)
 
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
+                    val scanned by pairing
                     SetupScreen(
                         hasPermission = collector.hasPermission(),
-                        savedUrl = collector.agentUrl,
-                        savedToken = collector.token,
+                        savedUrl = scanned?.first ?: collector.agentUrl,
+                        savedToken = scanned?.second ?: collector.token,
+                        scannedFromQr = scanned != null,
                         onGrantPermission = { openUsageAccessSettings() },
                         onSave = { url, token ->
                             getSharedPreferences("focuslens", MODE_PRIVATE).edit()
@@ -41,6 +46,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handlePairLink(intent)
+    }
+
+    /** Parses focuslens://pair?host=&port=&token= from a scanned QR code. */
+    private fun handlePairLink(intent: Intent?) {
+        val data: Uri = intent?.data ?: return
+        if (data.scheme != "focuslens" || data.host != "pair") return
+        val host = data.getQueryParameter("host") ?: return
+        val port = data.getQueryParameter("port") ?: "48732"
+        val token = data.getQueryParameter("token") ?: ""
+        pairing.value = "http://$host:$port" to token
     }
 
     private fun openUsageAccessSettings() {
@@ -66,11 +86,12 @@ fun SetupScreen(
     hasPermission: Boolean,
     savedUrl: String,
     savedToken: String,
+    scannedFromQr: Boolean = false,
     onGrantPermission: () -> Unit,
     onSave: (String, String) -> Unit,
 ) {
-    var url by remember { mutableStateOf(savedUrl) }
-    var token by remember { mutableStateOf(savedToken) }
+    var url by remember(savedUrl) { mutableStateOf(savedUrl) }
+    var token by remember(savedToken) { mutableStateOf(savedToken) }
 
     Column(
         modifier = Modifier
@@ -83,6 +104,16 @@ fun SetupScreen(
         Text("Android companion", style = MaterialTheme.typography.bodyMedium)
 
         Spacer(Modifier.height(8.dp))
+
+        if (scannedFromQr) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "✓ Scanned from desktop — just confirm permission and tap save.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
 
         if (!hasPermission) {
             Card(modifier = Modifier.fillMaxWidth()) {

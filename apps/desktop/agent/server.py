@@ -150,9 +150,42 @@ def create_app(store, is_paused: threading.Event, port: int = 48732) -> Flask:
             return jsonify(accepted=0)
 
         payload = request.get_json(silent=True) or {}
-        events = payload.get("events", [])
         from .engine import UsageRecord
 
+        # ---- Android companion: snapshot of today's per-app totals ----------
+        # Payload: {source:"android", records:[{kind,key,active_secs,bucket_ts}]}
+        # active_secs is a running daily total against a fixed (midnight) bucket,
+        # so we REPLACE rather than accumulate to stay idempotent across syncs.
+        if payload.get("source") == "android":
+            arecords = []
+            for ev in payload.get("records", []):
+                key = (ev.get("key") or "").strip()
+                active = ev.get("active_secs", 0)
+                bucket_ts = ev.get("bucket_ts", 0)
+                if (
+                    key
+                    and len(key) <= 253
+                    and isinstance(active, int)
+                    and 0 < active <= 86_400
+                    and bucket_ts > 0
+                    and bucket_ts % 60 == 0
+                ):
+                    arecords.append(
+                        UsageRecord(
+                            bucket_ts=bucket_ts,
+                            key=key,
+                            label=key,
+                            active_secs=active,
+                            idle_secs=0,
+                        )
+                    )
+            if arecords:
+                store.replace_usage("android", "app", arecords)
+                check_and_fire(store)
+            return jsonify(accepted=len(arecords))
+
+        # ---- Browser extension: per-minute domain events -------------------
+        events = payload.get("events", [])
         records = []
         for ev in events:
             domain = (ev.get("domain") or "").strip()
