@@ -118,18 +118,34 @@ body::before{
 /* Usage rows */
 .u-list{margin-bottom:32px}
 .u-row{
-  display:grid;grid-template-columns:196px 1fr 70px;
+  display:grid;grid-template-columns:210px 1fr 70px;
   align-items:center;gap:14px;padding:9px 0;
   border-bottom:1px solid var(--border);
   opacity:0;transform:translateY(5px);
   animation:rIn .35s forwards;
 }
 @keyframes rIn{to{opacity:1;transform:none}}
-.u-nm{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.u-nm{overflow:hidden;min-width:0}
+.u-app-name{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:5px}
+.u-win-title{font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;font-family:'DM Mono',monospace}
 .u-tr{height:3px;background:var(--surf-2);border-radius:99px;overflow:hidden}
 .u-bar{height:100%;background:var(--amber);border-radius:99px;width:0;transition:width .9s cubic-bezier(.25,.1,.25,1)}
 .u-bar.dom{background:var(--ink-2);opacity:.55}
 .u-tm{font-family:'DM Mono',monospace;font-size:11.5px;color:var(--ink-2);text-align:right;white-space:nowrap}
+
+/* Category filter tabs */
+.cat-filters{display:flex;gap:4px;margin-bottom:14px;flex-wrap:wrap}
+.cf-btn{
+  font-family:'Figtree',sans-serif;font-size:11.5px;font-weight:400;
+  background:var(--surf);border:1px solid var(--border);color:var(--ink-3);
+  border-radius:99px;padding:4px 13px;cursor:pointer;transition:all .15s;
+}
+.cf-btn:hover{color:var(--ink)}
+.cf-btn.on{color:var(--bg);border-color:transparent}
+.cf-btn.on.cf-all{background:var(--ink)}
+.cf-btn.on.cf-prod{background:var(--green)}
+.cf-btn.on.cf-neut{background:var(--ink-2)}
+.cf-btn.on.cf-dist{background:var(--red)}
 .u-empty{padding:22px 0;text-align:center;color:var(--ink-3);font-size:13px}
 
 /* LIMITS */
@@ -351,6 +367,12 @@ code.tok{
     </div>
 
     <div class="s-rule"><span class="s-rl">Applications</span></div>
+    <div class="cat-filters">
+      <button class="cf-btn cf-all on" id="cf-all"  onclick="setAppFilter('all')">All</button>
+      <button class="cf-btn cf-prod" id="cf-prod" onclick="setAppFilter('Productive')">Productive</button>
+      <button class="cf-btn cf-neut" id="cf-neut" onclick="setAppFilter('Neutral')">Neutral</button>
+      <button class="cf-btn cf-dist" id="cf-dist" onclick="setAppFilter('Distracting')">Distracting</button>
+    </div>
     <div class="u-list" id="apps-list"></div>
 
     <div class="s-rule"><span class="s-rl">Websites · via extension</span></div>
@@ -547,6 +569,89 @@ function editGoal() {
 
 const CAT_COLOR = {Productive:'var(--green)', Neutral:'var(--ink-3)', Distracting:'var(--red)'};
 
+const APP_NAMES = {
+  'chrome':'Google Chrome','chrome.exe':'Google Chrome',
+  'msedge':'Microsoft Edge','msedge.exe':'Microsoft Edge',
+  'firefox':'Firefox','firefox.exe':'Firefox',
+  'opera':'Opera','opera.exe':'Opera',
+  'brave':'Brave','brave.exe':'Brave',
+  'code':'Visual Studio Code','code.exe':'Visual Studio Code',
+  'cursor':'Cursor','cursor.exe':'Cursor',
+  'windsurf':'Windsurf','windsurf.exe':'Windsurf',
+  'pycharm64':'PyCharm','pycharm64.exe':'PyCharm',
+  'idea64':'IntelliJ IDEA','idea64.exe':'IntelliJ IDEA',
+  'webstorm64':'WebStorm','webstorm64.exe':'WebStorm',
+  'devenv':'Visual Studio','devenv.exe':'Visual Studio',
+  'rider64':'Rider','rider64.exe':'Rider',
+  'discord':'Discord','discord.exe':'Discord',
+  'slack':'Slack','slack.exe':'Slack',
+  'telegram':'Telegram','telegram.exe':'Telegram',
+  'whatsapp':'WhatsApp','whatsapp.exe':'WhatsApp',
+  'zoom':'Zoom','zoom.exe':'Zoom','zoom.us':'Zoom',
+  'teams':'Microsoft Teams','teams.exe':'Microsoft Teams',
+  'msteams':'Microsoft Teams','msteams.exe':'Microsoft Teams',
+  'spotify':'Spotify','spotify.exe':'Spotify',
+  'vlc':'VLC','vlc.exe':'VLC',
+  'steam':'Steam','steam.exe':'Steam',
+  'epicgameslauncher':'Epic Games','epicgameslauncher.exe':'Epic Games',
+  'notepad':'Notepad','notepad.exe':'Notepad',
+  'notepad++':'Notepad++','notepad++.exe':'Notepad++',
+  'explorer':'File Explorer','explorer.exe':'File Explorer',
+  'taskmgr':'Task Manager','taskmgr.exe':'Task Manager',
+  'powershell':'PowerShell','powershell.exe':'PowerShell',
+  'cmd':'Command Prompt','cmd.exe':'Command Prompt',
+  'windowsterminal':'Windows Terminal','windowsterminal.exe':'Windows Terminal',
+  'wt':'Windows Terminal','wt.exe':'Windows Terminal',
+  'winword':'Microsoft Word','winword.exe':'Microsoft Word',
+  'excel':'Microsoft Excel','excel.exe':'Microsoft Excel',
+  'powerpnt':'PowerPoint','powerpnt.exe':'PowerPoint',
+  'outlook':'Outlook','outlook.exe':'Outlook',
+  'onenote':'OneNote','onenote.exe':'OneNote',
+  'acrobat':'Adobe Acrobat','acrobat.exe':'Adobe Acrobat',
+  'photoshop':'Photoshop','photoshop.exe':'Photoshop',
+  'illustrator':'Illustrator','illustrator.exe':'Illustrator',
+  'figma':'Figma','figma.exe':'Figma',
+  'obsidian':'Obsidian','obsidian.exe':'Obsidian',
+  'notion':'Notion','notion.exe':'Notion',
+  'postman':'Postman','postman.exe':'Postman',
+  'docker desktop':'Docker Desktop','docker desktop.exe':'Docker Desktop',
+  'gitkraken':'GitKraken','gitkraken.exe':'GitKraken',
+  'githubdesktop':'GitHub Desktop','githubdesktop.exe':'GitHub Desktop',
+};
+
+function cleanAppName(key) {
+  if (!key) return key;
+  const lower = key.toLowerCase();
+  if (APP_NAMES[lower]) return APP_NAMES[lower];
+  // strip .exe and title-case
+  return lower.replace(/\.exe$/,'').replace(/[_-]/g,' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+let _appFilter = 'all';
+let _allApps = [];
+
+function setAppFilter(cat) {
+  _appFilter = cat;
+  ['all','prod','neut','dist'].forEach(k => {
+    const btn = document.getElementById('cf-'+k);
+    if (btn) btn.classList.remove('on');
+  });
+  const map = {all:'cf-all', Productive:'cf-prod', Neutral:'cf-neut', Distracting:'cf-dist'};
+  const btn = document.getElementById(map[cat]);
+  if (btn) btn.classList.add('on');
+  renderAppList();
+}
+
+function renderAppList() {
+  const items = _appFilter === 'all'
+    ? _allApps
+    : _allApps.filter(e => (e.category || 'Neutral') === _appFilter);
+  _renderList('apps-list', items, false, _appFilter === 'all'
+    ? 'No desktop activity yet.'
+    : `No ${_appFilter.toLowerCase()} apps today.`);
+}
+
 function renderScore(score) {
   const chip = document.getElementById('score-chip');
   if (score === null || score === undefined) { chip.style.display='none'; return; }
@@ -564,25 +669,36 @@ async function loadToday() {
     renderScore(d.productivityScore);
     setGauge(_goal > 0 ? (d.totalActiveSecs/(_goal*3600))*100 : 0);
     document.getElementById('goal-sp').textContent = _goal+'h';
-    renderList('apps-list', d.apps, false, 'No desktop activity yet.');
-    renderList('doms-list', d.domains, true, 'No browser data — install and pair the Chrome extension.');
+    _allApps = d.apps || [];
+    renderAppList();
+    _renderList('doms-list', d.domains, true, 'No browser data — install and pair the Chrome extension.');
   } catch {
     document.getElementById('hero-num').textContent = '—';
     document.getElementById('hero-date').textContent = 'Agent offline';
   }
 }
 
-function renderList(id, items, dom, empty) {
+function _renderList(id, items, dom, empty) {
   const el = document.getElementById(id);
   if (!items?.length) { el.innerHTML = `<div class="u-empty">${empty}</div>`; return; }
   const mx = Math.max(...items.map(x=>x.activeSecs), 1);
-  el.innerHTML = items.slice(0,12).map((e,i)=>`
-    <div class="u-row" style="animation-delay:${i*42}ms">
-      <span class="u-nm" title="${e.key} · ${e.category||'Neutral'}"><span
-        class="cat-dot" style="background:${CAT_COLOR[e.category]||'var(--ink-3)'}"></span>${e.label||e.key}</span>
+  el.innerHTML = items.slice(0,15).map((e,i)=>{
+    const appName = dom ? (e.label||e.key) : cleanAppName(e.key);
+    const winTitle = (!dom && e.label && e.label !== e.key && e.label.toLowerCase() !== appName.toLowerCase())
+      ? e.label : null;
+    const catColor = CAT_COLOR[e.category]||'var(--ink-3)';
+    return `<div class="u-row" style="animation-delay:${i*38}ms">
+      <div class="u-nm">
+        <div class="u-app-name">
+          <span class="cat-dot" style="background:${catColor}"></span>
+          <span title="${e.key}">${appName}</span>
+        </div>
+        ${winTitle ? `<div class="u-win-title" title="${winTitle}">${winTitle}</div>` : ''}
+      </div>
       <div class="u-tr"><div class="u-bar${dom?' dom':''}" data-w="${(e.activeSecs/mx)*100}"></div></div>
       <span class="u-tm">${fmt(e.activeSecs)}</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   requestAnimationFrame(()=>
     el.querySelectorAll('.u-bar').forEach(b=>setTimeout(()=>b.style.width=b.dataset.w+'%',80)));
 }
