@@ -318,9 +318,19 @@ class Store:
                    GROUP BY key HAVING active > 0 ORDER BY active DESC""",
                 (start, end),
             ).fetchall()
+            phone_apps = self._conn.execute(
+                """SELECT key, COALESCE(MAX(label), key) AS label,
+                          MAX(active_secs) AS active, 'android' AS source
+                   FROM usage_minutes
+                   WHERE kind = 'app' AND source = 'android'
+                     AND bucket_ts >= ? AND bucket_ts < ?
+                   GROUP BY key HAVING active > 0 ORDER BY active DESC""",
+                (start, end),
+            ).fetchall()
 
         classify = self._rules_matcher()
-        total = sum(r["active"] for r in apps)
+        desktop_total = sum(r["active"] for r in apps)
+        phone_total = sum(r["active"] for r in phone_apps)
 
         cat_secs = {"Productive": 0, "Neutral": 0, "Distracting": 0}
         app_rows = []
@@ -338,16 +348,26 @@ class Store:
                 {"key": r["key"], "label": r["label"], "activeSecs": r["active"],
                  "source": r["source"], "category": cat, "weight": weight}
             )
+        phone_rows = []
+        for r in phone_apps:
+            cat, weight = classify("app", r["key"], r["label"])
+            phone_rows.append(
+                {"key": r["key"], "label": r["label"], "activeSecs": r["active"],
+                 "source": "android", "category": cat, "weight": weight}
+            )
 
         return {
             "date": date_str,
-            "totalActiveSecs": total,
+            "totalActiveSecs": desktop_total,
+            "phoneActiveSecs": phone_total,
+            "allSourcesSecs": desktop_total + phone_total,
             "productivityScore": self._score(
                 cat_secs["Productive"], cat_secs["Neutral"], cat_secs["Distracting"]
             ),
             "categorySecs": cat_secs,
             "apps": app_rows,
             "domains": dom_rows,
+            "phoneApps": phone_rows,
         }
 
     # ---- trends -------------------------------------------------------------

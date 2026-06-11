@@ -310,16 +310,47 @@ code.tok{
 }
 .rule-x:hover{color:var(--red);background:var(--surf-2)}
 
+/* SOURCE TABS (desktop / phone / all) */
+.src-tabs{display:flex;gap:4px;margin-bottom:6px}
+.src-btn{
+  font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.07em;text-transform:uppercase;
+  background:var(--surf);border:1px solid var(--border);color:var(--ink-3);
+  border-radius:99px;padding:4px 12px;cursor:pointer;transition:all .15s;
+}
+.src-btn:hover{color:var(--ink)}
+.src-btn.on{background:var(--ink);color:var(--bg);border-color:transparent}
+
+/* PHONE empty state */
+.phone-empty{
+  text-align:center;padding:48px 20px;color:var(--ink-3);font-size:13px;line-height:1.6;
+}
+.phone-empty strong{display:block;font-size:15px;color:var(--ink-2);margin-bottom:8px}
+
 /* RESPONSIVE */
-@media(max-width:620px){
-  .tr-chart{gap:4px;height:120px}
-  .tr-day{font-size:7px}
+@media(max-width:680px){
+  #shell{padding:0 14px 60px}
+  #hdr{gap:10px;padding:16px 0 14px;margin-bottom:20px;flex-wrap:wrap}
+  .logo{font-size:15px}
+  .nav{gap:1px;order:3;width:100%;margin-left:0;overflow-x:auto;padding-bottom:2px;
+    scrollbar-width:none;-ms-overflow-style:none}
+  .nav::-webkit-scrollbar{display:none}
+  .nb{font-size:10.5px;padding:5px 10px;white-space:nowrap}
+  .hdr-r{margin-left:auto}
+  .hero-num{font-size:clamp(42px,13vw,70px)}
   .hero-row{grid-template-columns:1fr}
   .gauge-wrap{display:none}
-  .u-row{grid-template-columns:1fr 60px}
+  .u-row{grid-template-columns:1fr 56px}
   .u-tr{display:none}
+  .tr-chart{gap:4px;height:110px}
+  .tr-day{font-size:7px}
   .feat-grid{grid-template-columns:1fr}
   .lim-r{gap:6px}
+  .cat-filters{gap:3px}
+  .cf-btn{font-size:10.5px;padding:3px 10px}
+  .src-tabs{gap:3px}
+  .src-btn{font-size:9px;padding:3px 10px}
+  .qr-box{padding:20px 16px}
+  .scard{padding:12px 14px}
 }
 </style>
 </head>
@@ -330,6 +361,7 @@ code.tok{
     <div class="logo">Focus<em>Lens</em></div>
     <nav class="nav">
       <button class="nb on" id="t-today" onclick="show('today')">Today</button>
+      <button class="nb" id="t-phone" onclick="show('phone')">Phone</button>
       <button class="nb" id="t-trends" onclick="show('trends')">Trends</button>
       <button class="nb" id="t-limits" onclick="show('limits')">Limits</button>
       <button class="nb" id="t-settings" onclick="show('settings')">Settings</button>
@@ -348,6 +380,10 @@ code.tok{
     <div class="hero-row">
       <div>
         <div class="hero-eye">Active screen time · today</div>
+        <div class="src-tabs">
+          <button class="src-btn on" id="src-desktop" onclick="setSrc('desktop')">Desktop</button>
+          <button class="src-btn" id="src-all" onclick="setSrc('all')">All sources</button>
+        </div>
         <div class="hero-num" id="hero-num">—</div>
         <div class="hero-date" id="hero-date">Loading…</div>
         <div class="score-chip" id="score-chip" style="display:none">
@@ -377,6 +413,19 @@ code.tok{
 
     <div class="s-rule"><span class="s-rl">Websites · via extension</span></div>
     <div class="u-list" id="doms-list"></div>
+  </div>
+
+  <!-- PHONE -->
+  <div id="pg-phone" style="display:none">
+    <div class="hero-row" style="margin-bottom:28px">
+      <div>
+        <div class="hero-eye">Phone screen time · today</div>
+        <div class="hero-num" id="phone-num">—</div>
+        <div class="hero-date" id="phone-date" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <div class="s-rule"><span class="s-rl">Apps · Android</span></div>
+    <div class="u-list" id="phone-list"></div>
   </div>
 
   <!-- TRENDS -->
@@ -539,11 +588,12 @@ function fmt(s) {
 })();
 
 function show(pg) {
-  ['today','trends','limits','settings'].forEach(p => {
+  ['today','phone','trends','limits','settings'].forEach(p => {
     document.getElementById('pg-'+p).style.display = p===pg ? 'block' : 'none';
     document.getElementById('t-'+p).classList.toggle('on', p===pg);
   });
   if (pg==='today') loadToday();
+  if (pg==='phone') loadPhone();
   if (pg==='trends') loadTrends();
   if (pg==='limits') loadLimits();
   if (pg==='settings') { loadSettings(); loadRules(); }
@@ -661,20 +711,58 @@ function renderScore(score) {
     score >= 65 ? 'var(--green)' : score >= 40 ? '#C4890A' : 'var(--red)';
 }
 
+let _src = 'desktop';
+let _summaryCache = null;
+
+function setSrc(s) {
+  _src = s;
+  ['desktop','all'].forEach(k => {
+    document.getElementById('src-'+k).classList.toggle('on', k===s);
+  });
+  if (_summaryCache) _applyToday(_summaryCache);
+}
+
+function _applyToday(d) {
+  const secs = _src === 'all' ? d.allSourcesSecs : d.totalActiveSecs;
+  document.getElementById('hero-num').textContent = fmt(secs);
+  document.getElementById('hero-date').textContent =
+    _src === 'all' && d.phoneActiveSecs > 0
+      ? `desktop ${fmt(d.totalActiveSecs)} · phone ${fmt(d.phoneActiveSecs)}`
+      : d.date;
+  renderScore(d.productivityScore);
+  setGauge(_goal > 0 ? (secs/(_goal*3600))*100 : 0);
+  document.getElementById('goal-sp').textContent = _goal+'h';
+  _allApps = d.apps || [];
+  renderAppList();
+  _renderList('doms-list', d.domains, true, 'No browser data — install and pair the Chrome extension.');
+}
+
 async function loadToday() {
   try {
     const d = await (await fetch('/api/summary')).json();
-    document.getElementById('hero-num').textContent = fmt(d.totalActiveSecs);
-    document.getElementById('hero-date').textContent = d.date;
-    renderScore(d.productivityScore);
-    setGauge(_goal > 0 ? (d.totalActiveSecs/(_goal*3600))*100 : 0);
-    document.getElementById('goal-sp').textContent = _goal+'h';
-    _allApps = d.apps || [];
-    renderAppList();
-    _renderList('doms-list', d.domains, true, 'No browser data — install and pair the Chrome extension.');
+    _summaryCache = d;
+    _applyToday(d);
   } catch {
     document.getElementById('hero-num').textContent = '—';
     document.getElementById('hero-date').textContent = 'Agent offline';
+  }
+}
+
+async function loadPhone() {
+  try {
+    const d = await (await fetch('/api/summary')).json();
+    const phone = d.phoneApps || [];
+    document.getElementById('phone-num').textContent = fmt(d.phoneActiveSecs || 0);
+    document.getElementById('phone-date').textContent = d.phoneActiveSecs > 0
+      ? d.date : '';
+    if (!phone.length) {
+      document.getElementById('phone-list').innerHTML =
+        `<div class="phone-empty"><strong>No phone data yet</strong>Install the Android companion app, grant Usage Access permission, and sync once — your phone app usage will appear here.</div>`;
+    } else {
+      _renderList('phone-list', phone, false, '');
+    }
+  } catch {
+    document.getElementById('phone-num').textContent = '—';
   }
 }
 
