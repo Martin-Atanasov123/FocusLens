@@ -17,7 +17,6 @@ import {
   hasUsagePermission,
   loadConfig,
   openUsageAccessSettings,
-  registerBackgroundSync,
   saveConfig,
   syncNow,
   todayUsageSeconds,
@@ -108,10 +107,10 @@ export default function App() {
     return () => sub.remove();
   }, [refresh]);
 
-  // Once paired + permitted: register background sync
+  // Auto-sync on app open when already paired + permitted
   useEffect(() => {
     if (cfg && permission) {
-      registerBackgroundSync().catch(() => {});
+      syncNow().catch(() => {});
     }
   }, [cfg, permission]);
 

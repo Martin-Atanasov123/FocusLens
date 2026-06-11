@@ -1,27 +1,19 @@
 /**
  * Usage collection + sync to the FocusLens desktop agent.
  *
- * Reads today's per-app foreground time via UsageStatsManager (needs the
- * "Usage access" special permission) and POSTs a snapshot to the agent's
- * /events endpoint. The agent REPLACES the midnight-bucket row on every sync,
- * so repeated syncs never double-count.
- *
- * Works against either a LAN URL (http://192.168.x.x:48732) or a Cloudflare
- * tunnel URL (https://xxx.trycloudflare.com) — same code path.
+ * Reads today's per-app foreground time via UsageStatsManager and POSTs
+ * a snapshot to /events. The agent REPLACES the midnight-bucket row on
+ * every sync, so repeated syncs never double-count.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as BackgroundFetch from "expo-background-fetch";
-import * as TaskManager from "expo-task-manager";
 import {
   checkForPermission,
   queryAndAggregateUsageStats,
   showUsageAccessSettings,
 } from "@brighthustle/react-native-usage-stats-manager";
 
-const TASK_NAME = "focuslens-sync";
-
 export interface PairConfig {
-  baseUrl: string; // e.g. http://192.168.1.5:48732 or https://xxx.trycloudflare.com
+  baseUrl: string;
   token: string;
 }
 
@@ -46,15 +38,13 @@ export function openUsageAccessSettings(): void {
   showUsageAccessSettings("com.focuslens.mobile");
 }
 
-/** Today's per-app foreground seconds (packageName → secs), top 50. */
+/** Today's per-app foreground seconds, top 50. */
 export async function todayUsageSeconds(): Promise<
   { key: string; label: string; secs: number }[]
 > {
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
   const stats = await queryAndAggregateUsageStats(midnight.getTime(), Date.now());
-  // stats: { [packageName]: { appName, packageName, isSystem,
-  //          totalTimeInForeground } } — native module already converts to SECONDS
   const rows = Object.values(stats ?? {}) as any[];
   return rows
     .filter((s) => !s.isSystem)
@@ -106,25 +96,5 @@ export async function syncNow(): Promise<boolean> {
     return false;
   } catch {
     return false;
-  }
-}
-
-// ---- background task (every ~15 min, OS-scheduled) -------------------------
-
-TaskManager.defineTask(TASK_NAME, async () => {
-  const ok = await syncNow();
-  return ok
-    ? BackgroundFetch.BackgroundFetchResult.NewData
-    : BackgroundFetch.BackgroundFetchResult.Failed;
-});
-
-export async function registerBackgroundSync(): Promise<void> {
-  const registered = await TaskManager.isTaskRegisteredAsync(TASK_NAME);
-  if (!registered) {
-    await BackgroundFetch.registerTaskAsync(TASK_NAME, {
-      minimumInterval: 15 * 60, // seconds
-      stopOnTerminate: false,
-      startOnBoot: true,
-    });
   }
 }
