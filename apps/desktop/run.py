@@ -53,7 +53,7 @@ def main() -> None:
         import logging
         log = logging.getLogger("werkzeug")
         log.setLevel(logging.ERROR)
-        flask_app.run(host="127.0.0.1", port=PORT, debug=False, use_reloader=False)
+        flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
 
     flask_thread = threading.Thread(target=run_flask, daemon=True, name="focuslens-server")
     flask_thread.start()
