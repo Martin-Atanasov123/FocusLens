@@ -120,6 +120,13 @@ def main() -> None:
 
     tray = pystray.Icon("FocusLens", icon_image, "FocusLens", menu)
     print(f"[FocusLens] running — dashboard at http://127.0.0.1:{PORT}/")
+
+    # First run: open the dashboard so a double-clicked .exe shows something
+    # immediately instead of silently sitting in the tray.
+    if store.get_setting("first_run_done") is None:
+        store.set_setting("first_run_done", "1")
+        threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
+
     tray.run()
 
 

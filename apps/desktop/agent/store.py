@@ -13,6 +13,44 @@ from .timeutil import local_day_bounds
 DEFAULT_RETENTION_DAYS = 90
 DEFAULT_IDLE_THRESHOLD = 60
 
+# Seeded once on first run; users edit rules afterwards via the dashboard.
+# weight: +1 productive, 0 neutral, -1 distracting.
+DEFAULT_CATEGORIES: list[tuple[str, float]] = [
+    ("Productive", 1.0),
+    ("Neutral", 0.0),
+    ("Distracting", -1.0),
+]
+
+DEFAULT_RULES: list[tuple[str, str, str]] = [  # (category, pattern, target_kind)
+    ("Productive", "code", "app"),
+    ("Productive", "visual studio", "app"),
+    ("Productive", "pycharm", "app"),
+    ("Productive", "intellij", "app"),
+    ("Productive", "terminal", "app"),
+    ("Productive", "powershell", "app"),
+    ("Productive", "excel", "app"),
+    ("Productive", "word", "app"),
+    ("Productive", "obsidian", "app"),
+    ("Productive", "notion", "app"),
+    ("Productive", "figma", "app"),
+    ("Productive", "github.com", "domain"),
+    ("Productive", "stackoverflow.com", "domain"),
+    ("Productive", "docs.google.com", "domain"),
+    ("Productive", "notion.so", "domain"),
+    ("Productive", "wikipedia.org", "domain"),
+    ("Distracting", "youtube.com", "domain"),
+    ("Distracting", "facebook.com", "domain"),
+    ("Distracting", "instagram.com", "domain"),
+    ("Distracting", "tiktok.com", "domain"),
+    ("Distracting", "twitter.com", "domain"),
+    ("Distracting", "x.com", "domain"),
+    ("Distracting", "reddit.com", "domain"),
+    ("Distracting", "netflix.com", "domain"),
+    ("Distracting", "twitch.tv", "domain"),
+    ("Distracting", "steam", "app"),
+    ("Distracting", "netflix", "app"),
+]
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS usage_minutes (
     bucket_ts   INTEGER NOT NULL,
@@ -81,6 +119,28 @@ class Store:
         self._conn.executescript(SCHEMA)
         self._conn.commit()
         self._ensure_pairing_token()
+        self._seed_categories()
+
+    def _seed_categories(self) -> None:
+        if self.get_setting("categories_seeded"):
+            return
+        with self._lock:
+            for name, weight in DEFAULT_CATEGORIES:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO categories (name, productivity_weight) VALUES (?, ?)",
+                    (name, weight),
+                )
+            ids = {
+                r["name"]: r["id"]
+                for r in self._conn.execute("SELECT id, name FROM categories")
+            }
+            for cat, pattern, kind in DEFAULT_RULES:
+                self._conn.execute(
+                    "INSERT INTO category_rules (category_id, pattern, target_kind) VALUES (?, ?, ?)",
+                    (ids[cat], pattern, kind),
+                )
+            self._conn.commit()
+        self.set_setting("categories_seeded", "1")
 
     def _ensure_pairing_token(self) -> None:
         if self.get_setting("pairing_token") is None:
@@ -173,6 +233,70 @@ class Store:
             ).fetchone()
             return int(row[0])
 
+    # ---- categories ---------------------------------------------------------
+
+    def list_categories(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, name, productivity_weight FROM categories ORDER BY productivity_weight DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def list_rules(self) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT r.id, r.pattern, r.target_kind, c.name AS category,
+                          c.productivity_weight AS weight
+                   FROM category_rules r JOIN categories c ON c.id = r.category_id
+                   ORDER BY c.productivity_weight DESC, r.pattern"""
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def add_rule(self, category_name: str, pattern: str, target_kind: str) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM categories WHERE name = ?", (category_name,)
+            ).fetchone()
+            if not row:
+                raise ValueError(f"unknown category: {category_name}")
+            cur = self._conn.execute(
+                "INSERT INTO category_rules (category_id, pattern, target_kind) VALUES (?, ?, ?)",
+                (row["id"], pattern.strip().lower(), target_kind),
+            )
+            self._conn.commit()
+            return cur.lastrowid
+
+    def delete_rule(self, rule_id: int) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM category_rules WHERE id = ?", (rule_id,))
+            self._conn.commit()
+
+    def _rules_matcher(self):
+        """Returns classify(kind, key, label) -> (category_name, weight).
+
+        Case-insensitive substring match; longest pattern wins so
+        'docs.google.com' beats 'google.com'. Unmatched → Neutral/0.
+        """
+        rules = self.list_rules()
+        rules.sort(key=lambda r: len(r["pattern"]), reverse=True)
+
+        def classify(kind: str, key: str, label: str | None) -> tuple[str, float]:
+            hay = ((key or "") + " " + (label or "")).lower()
+            for r in rules:
+                if r["target_kind"] in (kind, "any") and r["pattern"] in hay:
+                    return r["category"], r["weight"]
+            return "Neutral", 0.0
+
+        return classify
+
+    @staticmethod
+    def _score(productive: int, neutral: int, distracting: int) -> int | None:
+        """0–100: productive counts full, neutral half, distracting zero."""
+        total = productive + neutral + distracting
+        if total <= 0:
+            return None
+        return round(100 * (productive + 0.5 * neutral) / total)
+
     def day_summary(self, date_str: str) -> dict:
         start, end = local_day_bounds(date_str)
         with self._lock:
@@ -195,19 +319,121 @@ class Store:
                 (start, end),
             ).fetchall()
 
+        classify = self._rules_matcher()
         total = sum(r["active"] for r in apps)
+
+        cat_secs = {"Productive": 0, "Neutral": 0, "Distracting": 0}
+        app_rows = []
+        for r in apps:
+            cat, weight = classify("app", r["key"], r["label"])
+            cat_secs[cat] = cat_secs.get(cat, 0) + r["active"]
+            app_rows.append(
+                {"key": r["key"], "label": r["label"], "activeSecs": r["active"],
+                 "source": r["source"], "category": cat, "weight": weight}
+            )
+        dom_rows = []
+        for r in domains:
+            cat, weight = classify("domain", r["key"], r["label"])
+            dom_rows.append(
+                {"key": r["key"], "label": r["label"], "activeSecs": r["active"],
+                 "source": r["source"], "category": cat, "weight": weight}
+            )
+
         return {
             "date": date_str,
             "totalActiveSecs": total,
-            "apps": [
-                {"key": r["key"], "label": r["label"], "activeSecs": r["active"], "source": r["source"]}
-                for r in apps
-            ],
-            "domains": [
-                {"key": r["key"], "label": r["label"], "activeSecs": r["active"], "source": r["source"]}
-                for r in domains
-            ],
+            "productivityScore": self._score(
+                cat_secs["Productive"], cat_secs["Neutral"], cat_secs["Distracting"]
+            ),
+            "categorySecs": cat_secs,
+            "apps": app_rows,
+            "domains": dom_rows,
         }
+
+    # ---- trends -------------------------------------------------------------
+
+    def daily_totals(self, days: int, end_date: str) -> list[dict]:
+        """Per-day totals for the `days` days ending at end_date (inclusive),
+        oldest first. Each day: total active + per-category seconds + score.
+        Desktop app rows only — the canonical machine-time measure."""
+        from datetime import date, timedelta
+
+        end = date.fromisoformat(end_date)
+        start_str = (end - timedelta(days=days - 1)).isoformat()
+        start_ts, _ = local_day_bounds(start_str)
+        _, end_ts = local_day_bounds(end_date)
+
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT date(bucket_ts, 'unixepoch', 'localtime') AS day,
+                          key, COALESCE(MAX(label), key) AS label,
+                          SUM(active_secs) AS active
+                   FROM usage_minutes
+                   WHERE kind = 'app' AND source = 'desktop'
+                     AND bucket_ts >= ? AND bucket_ts < ?
+                   GROUP BY day, key""",
+                (start_ts, end_ts),
+            ).fetchall()
+
+        classify = self._rules_matcher()
+        by_day: dict[str, dict] = {}
+        for r in rows:
+            d = by_day.setdefault(
+                r["day"],
+                {"total": 0, "Productive": 0, "Neutral": 0, "Distracting": 0},
+            )
+            cat, _ = classify("app", r["key"], r["label"])
+            d["total"] += r["active"]
+            d[cat] += r["active"]
+
+        out = []
+        for i in range(days):
+            day = (end - timedelta(days=days - 1 - i)).isoformat()
+            d = by_day.get(day, {"total": 0, "Productive": 0, "Neutral": 0, "Distracting": 0})
+            out.append({
+                "date": day,
+                "activeSecs": d["total"],
+                "productiveSecs": d["Productive"],
+                "neutralSecs": d["Neutral"],
+                "distractingSecs": d["Distracting"],
+                "score": self._score(d["Productive"], d["Neutral"], d["Distracting"]),
+            })
+        return out
+
+    def app_week_movers(self, end_date: str, top_n: int = 5) -> list[dict]:
+        """Apps with the biggest absolute change: last 7 days vs previous 7."""
+        from datetime import date, timedelta
+
+        end = date.fromisoformat(end_date)
+        mid_str = (end - timedelta(days=6)).isoformat()
+        prev_start_str = (end - timedelta(days=13)).isoformat()
+        this_start, _ = local_day_bounds(mid_str)
+        prev_start, _ = local_day_bounds(prev_start_str)
+        _, end_ts = local_day_bounds(end_date)
+
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT key, COALESCE(MAX(label), key) AS label,
+                          SUM(CASE WHEN bucket_ts >= ? THEN active_secs ELSE 0 END) AS this_week,
+                          SUM(CASE WHEN bucket_ts <  ? THEN active_secs ELSE 0 END) AS last_week
+                   FROM usage_minutes
+                   WHERE kind = 'app' AND source = 'desktop'
+                     AND bucket_ts >= ? AND bucket_ts < ?
+                   GROUP BY key""",
+                (this_start, this_start, prev_start, end_ts),
+            ).fetchall()
+
+        movers = [
+            {
+                "key": r["key"], "label": r["label"],
+                "thisWeekSecs": r["this_week"], "lastWeekSecs": r["last_week"],
+                "deltaSecs": r["this_week"] - r["last_week"],
+            }
+            for r in rows
+            if r["this_week"] + r["last_week"] >= 300  # ignore noise under 5 min
+        ]
+        movers.sort(key=lambda m: abs(m["deltaSecs"]), reverse=True)
+        return movers[:top_n]
 
     # ---- limits ------------------------------------------------------------
 

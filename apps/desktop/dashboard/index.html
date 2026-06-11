@@ -246,8 +246,58 @@ code.tok{
 }
 .qr-cl:hover{background:var(--surf-2)}
 
+/* SCORE CHIP */
+.score-chip{
+  display:inline-flex;align-items:center;gap:8px;margin-top:12px;
+  background:var(--surf);border:1px solid var(--border);border-radius:99px;
+  padding:6px 14px;font-size:12.5px;color:var(--ink-2);font-weight:400;
+}
+.score-dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3)}
+
+/* CATEGORY DOT on usage rows */
+.cat-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-right:2px}
+
+/* TRENDS */
+.tr-head{margin-bottom:8px}
+.tr-week{font-family:'Fraunces',serif;font-size:46px;font-weight:200;letter-spacing:-.03em;line-height:1}
+.tr-delta{font-family:'DM Mono',monospace;font-size:12px;color:var(--ink-2);margin-top:6px}
+.tr-chart{
+  display:flex;align-items:flex-end;gap:8px;height:160px;
+  padding:12px 4px 0;
+}
+.tr-col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:0;cursor:default}
+.tr-seg{width:100%;border-radius:2px 2px 0 0;transition:height .4s cubic-bezier(.2,.7,.3,1)}
+.tr-col .tr-seg+.tr-seg{border-radius:0}
+.tr-day{
+  font-family:'DM Mono',monospace;font-size:8.5px;color:var(--ink-3);
+  text-align:center;margin-top:6px;letter-spacing:.02em;
+}
+.tr-col:hover .tr-day{color:var(--ink)}
+.tr-legend{
+  display:flex;gap:18px;justify-content:center;margin-top:14px;
+  font-size:11px;color:var(--ink-2);
+}
+.tr-legend span{display:inline-flex;align-items:center;gap:6px}
+.lg-dot{width:7px;height:7px;border-radius:2px;display:inline-block}
+.mv-delta{font-family:'DM Mono',monospace;font-size:11.5px;min-width:64px;text-align:right}
+
+/* RULES LIST */
+.rule-row{
+  display:flex;align-items:center;gap:10px;padding:7px 0;
+  border-bottom:1px solid var(--border);font-size:12.5px;
+}
+.rule-row:last-child{border-bottom:none}
+.rule-pat{font-family:'DM Mono',monospace;font-size:12px;flex:1}
+.rule-x{
+  background:none;border:none;color:var(--ink-3);cursor:pointer;
+  font-size:14px;padding:2px 6px;border-radius:5px;
+}
+.rule-x:hover{color:var(--red);background:var(--surf-2)}
+
 /* RESPONSIVE */
 @media(max-width:620px){
+  .tr-chart{gap:4px;height:120px}
+  .tr-day{font-size:7px}
   .hero-row{grid-template-columns:1fr}
   .gauge-wrap{display:none}
   .u-row{grid-template-columns:1fr 60px}
@@ -264,6 +314,7 @@ code.tok{
     <div class="logo">Focus<em>Lens</em></div>
     <nav class="nav">
       <button class="nb on" id="t-today" onclick="show('today')">Today</button>
+      <button class="nb" id="t-trends" onclick="show('trends')">Trends</button>
       <button class="nb" id="t-limits" onclick="show('limits')">Limits</button>
       <button class="nb" id="t-settings" onclick="show('settings')">Settings</button>
     </nav>
@@ -283,6 +334,10 @@ code.tok{
         <div class="hero-eye">Active screen time · today</div>
         <div class="hero-num" id="hero-num">—</div>
         <div class="hero-date" id="hero-date">Loading…</div>
+        <div class="score-chip" id="score-chip" style="display:none">
+          <span class="score-dot" id="score-dot"></span>
+          <span id="score-txt">Focus score —</span>
+        </div>
       </div>
       <div class="gauge-wrap">
         <svg class="g-svg" width="164" height="96" viewBox="0 0 164 96">
@@ -300,6 +355,28 @@ code.tok{
 
     <div class="s-rule"><span class="s-rl">Websites · via extension</span></div>
     <div class="u-list" id="doms-list"></div>
+  </div>
+
+  <!-- TRENDS -->
+  <div id="pg-trends" style="display:none">
+    <div class="tr-head">
+      <div>
+        <div class="hero-eye">This week · last 7 days</div>
+        <div class="tr-week" id="tr-week">—</div>
+        <div class="tr-delta" id="tr-delta"></div>
+      </div>
+    </div>
+
+    <div class="s-rule"><span class="s-rl">Last 14 days</span></div>
+    <div class="tr-chart" id="tr-chart"></div>
+    <div class="tr-legend">
+      <span><i class="lg-dot" style="background:var(--green)"></i>Productive</span>
+      <span><i class="lg-dot" style="background:var(--ink-3)"></i>Neutral</span>
+      <span><i class="lg-dot" style="background:var(--red)"></i>Distracting</span>
+    </div>
+
+    <div class="s-rule"><span class="s-rl">Biggest changes vs last week</span></div>
+    <div class="u-list" id="tr-movers"></div>
   </div>
 
   <!-- LIMITS -->
@@ -337,6 +414,22 @@ code.tok{
         </div>
         <button class="tog" id="pause-tog" onclick="togglePause()"></button>
       </div>
+    </div>
+
+    <div class="scard">
+      <div class="slbl">Categories · drive the focus score</div>
+      <div class="lf-row" style="margin-bottom:10px">
+        <select id="r-cat">
+          <option>Productive</option><option>Neutral</option><option>Distracting</option>
+        </select>
+        <input id="r-pat" type="text" placeholder="pattern, e.g. youtube.com or photoshop" style="flex:1;min-width:140px"/>
+        <select id="r-kind">
+          <option value="any">any</option><option value="app">app</option><option value="domain">domain</option>
+        </select>
+        <button class="btn-p" onclick="addRule()">Add rule</button>
+      </div>
+      <div class="err" id="r-err"></div>
+      <div id="rules-list"></div>
     </div>
 
     <div class="scard">
@@ -424,13 +517,14 @@ function fmt(s) {
 })();
 
 function show(pg) {
-  ['today','limits','settings'].forEach(p => {
+  ['today','trends','limits','settings'].forEach(p => {
     document.getElementById('pg-'+p).style.display = p===pg ? 'block' : 'none';
     document.getElementById('t-'+p).classList.toggle('on', p===pg);
   });
   if (pg==='today') loadToday();
+  if (pg==='trends') loadTrends();
   if (pg==='limits') loadLimits();
-  if (pg==='settings') loadSettings();
+  if (pg==='settings') { loadSettings(); loadRules(); }
 }
 
 function setGauge(pct) {
@@ -451,11 +545,23 @@ function editGoal() {
   }
 }
 
+const CAT_COLOR = {Productive:'var(--green)', Neutral:'var(--ink-3)', Distracting:'var(--red)'};
+
+function renderScore(score) {
+  const chip = document.getElementById('score-chip');
+  if (score === null || score === undefined) { chip.style.display='none'; return; }
+  chip.style.display = 'inline-flex';
+  document.getElementById('score-txt').textContent = 'Focus score ' + score;
+  document.getElementById('score-dot').style.background =
+    score >= 65 ? 'var(--green)' : score >= 40 ? '#C4890A' : 'var(--red)';
+}
+
 async function loadToday() {
   try {
     const d = await (await fetch('/api/summary')).json();
     document.getElementById('hero-num').textContent = fmt(d.totalActiveSecs);
     document.getElementById('hero-date').textContent = d.date;
+    renderScore(d.productivityScore);
     setGauge(_goal > 0 ? (d.totalActiveSecs/(_goal*3600))*100 : 0);
     document.getElementById('goal-sp').textContent = _goal+'h';
     renderList('apps-list', d.apps, false, 'No desktop activity yet.');
@@ -472,12 +578,96 @@ function renderList(id, items, dom, empty) {
   const mx = Math.max(...items.map(x=>x.activeSecs), 1);
   el.innerHTML = items.slice(0,12).map((e,i)=>`
     <div class="u-row" style="animation-delay:${i*42}ms">
-      <span class="u-nm" title="${e.key}">${e.label||e.key}</span>
+      <span class="u-nm" title="${e.key} · ${e.category||'Neutral'}"><span
+        class="cat-dot" style="background:${CAT_COLOR[e.category]||'var(--ink-3)'}"></span>${e.label||e.key}</span>
       <div class="u-tr"><div class="u-bar${dom?' dom':''}" data-w="${(e.activeSecs/mx)*100}"></div></div>
       <span class="u-tm">${fmt(e.activeSecs)}</span>
     </div>`).join('');
   requestAnimationFrame(()=>
     el.querySelectorAll('.u-bar').forEach(b=>setTimeout(()=>b.style.width=b.dataset.w+'%',80)));
+}
+
+// ---- TRENDS -----------------------------------------------------------------
+
+async function loadTrends() {
+  try {
+    const t = await (await fetch('/api/trends?days=14')).json();
+    document.getElementById('tr-week').textContent = fmt(t.thisWeekSecs);
+    const dEl = document.getElementById('tr-delta');
+    if (t.deltaPct === null) {
+      dEl.textContent = 'no data for the previous week yet';
+    } else {
+      const up = t.deltaPct >= 0;
+      dEl.innerHTML = (up?'▲ +':'▼ ')+t.deltaPct+'% vs last week ('+fmt(t.lastWeekSecs)+')';
+      dEl.style.color = up ? 'var(--red)' : 'var(--green)'; // more screen time = red
+    }
+
+    const mx = Math.max(...t.days.map(d=>d.activeSecs), 1);
+    document.getElementById('tr-chart').innerHTML = t.days.map(d=>{
+      const h = s => Math.round((s/mx)*138);
+      const dow = ['Su','Mo','Tu','We','Th','Fr','Sa'][new Date(d.date+'T12:00').getDay()];
+      const tip = d.date+' · '+fmt(d.activeSecs)+(d.score!==null?' · score '+d.score:'');
+      return `<div class="tr-col" title="${tip}">
+        <div class="tr-seg" style="height:${h(d.distractingSecs)}px;background:var(--red);opacity:.75"></div>
+        <div class="tr-seg" style="height:${h(d.neutralSecs)}px;background:var(--ink-3);opacity:.5"></div>
+        <div class="tr-seg" style="height:${h(d.productiveSecs)}px;background:var(--green);opacity:.8"></div>
+        <div class="tr-day">${dow}</div>
+      </div>`;
+    }).join('');
+
+    const mv = document.getElementById('tr-movers');
+    if (!t.movers?.length) {
+      mv.innerHTML = '<div class="u-empty">Not enough history yet — check back in a few days.</div>';
+    } else {
+      mv.innerHTML = t.movers.map((m,i)=>{
+        const up = m.deltaSecs >= 0;
+        return `<div class="u-row" style="animation-delay:${i*42}ms">
+          <span class="u-nm" title="${m.key}">${m.label||m.key}</span>
+          <span class="u-tm">${fmt(m.thisWeekSecs)} this wk</span>
+          <span class="mv-delta" style="color:${up?'var(--red)':'var(--green)'}">${up?'▲ +':'▼ −'}${fmt(Math.abs(m.deltaSecs))}</span>
+        </div>`;
+      }).join('');
+    }
+  } catch(e){ console.error(e); }
+}
+
+// ---- CATEGORY RULES -----------------------------------------------------------
+
+async function loadRules() {
+  try {
+    const d = await (await fetch('/api/categories')).json();
+    const el = document.getElementById('rules-list');
+    el.innerHTML = d.rules.map(r=>`
+      <div class="rule-row">
+        <span class="cat-dot" style="background:${CAT_COLOR[r.category]||'var(--ink-3)'}"></span>
+        <span class="rule-pat">${r.pattern}</span>
+        <span class="badge">${r.target_kind}</span>
+        <span class="badge">${r.category}</span>
+        <button class="rule-x" title="Delete rule" onclick="delRule(${r.id})">×</button>
+      </div>`).join('');
+  } catch(e){ console.error(e); }
+}
+
+async function addRule() {
+  const err = document.getElementById('r-err');
+  err.textContent = '';
+  const pattern = document.getElementById('r-pat').value.trim().toLowerCase();
+  if (!pattern) { err.textContent = 'Enter a pattern.'; return; }
+  const r = await fetch('/api/categories/rules', {
+    method:'POST', headers:{'content-type':'application/json'},
+    body: JSON.stringify({
+      category: document.getElementById('r-cat').value,
+      pattern, target_kind: document.getElementById('r-kind').value,
+    })
+  });
+  if (!r.ok) { err.textContent = (await r.json()).error||'Error'; return; }
+  document.getElementById('r-pat').value = '';
+  loadRules();
+}
+
+async function delRule(id) {
+  await fetch('/api/categories/rules/'+id, {method:'DELETE'});
+  loadRules();
 }
 
 async function loadLimits() {

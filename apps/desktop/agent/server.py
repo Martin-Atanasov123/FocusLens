@@ -122,6 +122,53 @@ def create_app(store, is_paused: threading.Event, port: int = 48732, tunnel=None
         except ValueError as e:
             return jsonify(error=str(e)), 400
 
+    @app.route("/api/trends")
+    def api_trends():
+        days = min(max(int(request.args.get("days", 14)), 7), 90)
+        end_date = request.args.get("date", today_local())
+        try:
+            daily = store.daily_totals(days, end_date)
+        except ValueError as e:
+            return jsonify(error=str(e)), 400
+
+        this_week = sum(d["activeSecs"] for d in daily[-7:])
+        last_week = sum(d["activeSecs"] for d in daily[-14:-7]) if len(daily) >= 14 else 0
+        delta_pct = (
+            round(100 * (this_week - last_week) / last_week) if last_week > 0 else None
+        )
+        return jsonify(
+            days=daily,
+            thisWeekSecs=this_week,
+            lastWeekSecs=last_week,
+            deltaPct=delta_pct,
+            movers=store.app_week_movers(end_date),
+        )
+
+    @app.route("/api/categories", methods=["GET"])
+    def api_categories_get():
+        return jsonify(categories=store.list_categories(), rules=store.list_rules())
+
+    @app.route("/api/categories/rules", methods=["POST"])
+    def api_rules_post():
+        data = request.get_json(silent=True) or {}
+        pattern = (data.get("pattern") or "").strip()
+        category = (data.get("category") or "").strip()
+        kind = data.get("target_kind", "any")
+        if not pattern or len(pattern) > 253:
+            return jsonify(error="pattern is required"), 400
+        if kind not in ("app", "domain", "any"):
+            return jsonify(error="target_kind must be app, domain or any"), 400
+        try:
+            rid = store.add_rule(category, pattern, kind)
+        except ValueError as e:
+            return jsonify(error=str(e)), 400
+        return jsonify(id=rid), 201
+
+    @app.route("/api/categories/rules/<int:rid>", methods=["DELETE"])
+    def api_rules_delete(rid: int):
+        store.delete_rule(rid)
+        return "", 204
+
     @app.route("/api/limits", methods=["GET"])
     def api_limits_get():
         from .timeutil import local_day_bounds
