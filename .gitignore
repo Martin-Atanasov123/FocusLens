@@ -10,3 +10,12 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
+
+# Large binaries (downloaded separately)
+cloudflared.exe
+
+# Expo / React Native
+.expo/
+android/app/build/
+*.apk
+*.aab

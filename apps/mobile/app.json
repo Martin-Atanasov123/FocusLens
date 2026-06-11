@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "FocusLens",
+    "slug": "focuslens",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "focuslens",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F2EDE3",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.focuslens.mobile",
+      "permissions": [
+        "android.permission.PACKAGE_USAGE_STATS",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": ["DEFAULT", "BROWSABLE"],
+          "data": [{ "scheme": "focuslens", "host": "pair" }]
+        }
+      ]
+    },
+    "plugins": ["expo-background-fetch"]
+  }
+}
