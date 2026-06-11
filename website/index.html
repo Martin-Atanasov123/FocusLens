@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>FocusLens — Private Screen Time Tracker</title>
+<meta name="description" content="Track how you spend time on your computer and phone. Entirely on your device — no cloud, no accounts, no data leaving your machine."/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,200;0,9..144,400;1,9..144,200;1,9..144,400&family=DM+Mono:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F7F3EA;--surf:#EFE9DC;--surf-2:#E6DFCF;
+  --border:rgba(24,18,8,.09);--ink:#1C1610;--ink-2:#6B6256;--ink-3:#A8A098;
+  --amber:#B26A0A;--amber-bg:#FBF0DC;--green:#1D6B3F;--red:#B5280A;
+}
+html{font-size:16px;scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:'Figtree',system-ui,sans-serif;font-weight:300}
+
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:radial-gradient(circle,rgba(24,18,8,.06) 1px,transparent 1px);
+  background-size:28px 28px;pointer-events:none;z-index:0;
+}
+
+.wrap{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 28px}
+
+/* NAV */
+nav{
+  position:sticky;top:0;z-index:100;
+  border-bottom:1px solid var(--border);
+  background:rgba(247,243,234,.92);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+.nav-inner{
+  max-width:1100px;margin:0 auto;padding:0 28px;
+  display:flex;align-items:center;gap:24px;height:60px;
+}
+.logo{font-family:'Fraunces',serif;font-size:17px;font-weight:400;letter-spacing:-.01em;text-decoration:none;color:var(--ink)}
+.logo em{font-style:italic;color:var(--amber)}
+.nav-links{display:flex;align-items:center;gap:8px;margin-left:auto}
+.nav-link{font-size:13px;color:var(--ink-3);text-decoration:none;padding:6px 12px;border-radius:8px;transition:color .15s,background .15s;font-weight:400}
+.nav-link:hover{color:var(--ink-2);background:var(--surf)}
+.nav-cta{
+  font-size:13px;font-weight:500;
+  background:var(--ink);color:var(--bg);
+  text-decoration:none;padding:8px 16px;border-radius:8px;
+  transition:opacity .15s;
+}
+.nav-cta:hover{opacity:.82}
+
+/* HERO */
+.hero{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:60px;align-items:center;
+  padding:100px 0 80px;
+}
+.hero-eyebrow{
+  font-family:'DM Mono',monospace;font-size:10px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);
+  margin-bottom:20px;
+}
+.hero h1{
+  font-family:'Fraunces',serif;
+  font-size:clamp(44px,5.5vw,72px);
+  font-weight:200;line-height:1.0;letter-spacing:-.03em;
+  color:var(--ink);margin-bottom:20px;
+}
+.hero h1 em{font-style:italic;color:var(--amber)}
+.hero-sub{
+  font-size:16px;color:var(--ink-2);line-height:1.65;
+  max-width:420px;margin-bottom:32px;font-weight:300;
+}
+.hero-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.btn-primary{
+  font-family:'Figtree',sans-serif;font-size:14px;font-weight:500;
+  background:var(--ink);color:var(--bg);
+  text-decoration:none;padding:12px 22px;border-radius:10px;
+  transition:opacity .15s;display:inline-flex;align-items:center;gap:8px;
+}
+.btn-primary:hover{opacity:.82}
+.btn-ghost{
+  font-family:'Figtree',sans-serif;font-size:13.5px;font-weight:400;
+  color:var(--ink-2);text-decoration:none;
+  border:1px solid var(--border);padding:11px 20px;border-radius:10px;
+  transition:border-color .15s,color .15s;
+}
+.btn-ghost:hover{border-color:var(--ink-3);color:var(--ink)}
+
+/* Dashboard mockup */
+.mockup{
+  background:var(--surf);border:1px solid var(--border);border-radius:16px;
+  overflow:hidden;box-shadow:0 20px 60px rgba(24,18,8,.08);
+}
+.mock-hdr{
+  display:flex;align-items:center;gap:14px;
+  padding:12px 16px;border-bottom:1px solid var(--border);
+}
+.mock-logo{font-family:'Fraunces',serif;font-size:13px;font-weight:400}
+.mock-logo em{font-style:italic;color:var(--amber)}
+.mock-tab{font-size:10px;padding:3px 9px;border-radius:5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);font-family:'Figtree',sans-serif}
+.mock-tab.on{background:var(--surf-2);color:var(--ink);font-weight:500}
+.mock-dot{width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:auto;animation:mp 2s ease-in-out infinite}
+@keyframes mp{0%,100%{opacity:1}50%{opacity:.3}}
+.mock-body{padding:16px}
+.mock-eye{font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.mock-time{font-family:'Fraunces',serif;font-size:42px;font-weight:200;letter-spacing:-.03em;line-height:.9;margin-bottom:6px}
+.mock-date{font-family:'DM Mono',monospace;font-size:10px;color:var(--ink-2);margin-bottom:16px}
+.mock-divider{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.mock-divider::before,.mock-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.mock-dl{font-family:'DM Mono',monospace;font-size:8px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.mock-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+.mock-rn{font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mock-rt{height:2px;flex:0 0 80px;background:var(--surf-2);border-radius:99px;overflow:hidden}
+.mock-rb{height:100%;border-radius:99px;background:var(--amber)}
+.mock-rv{font-family:'DM Mono',monospace;font-size:10px;color:var(--ink-2);text-align:right;min-width:38px}
+
+/* BADGE ROW */
+.badges{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+.badge{
+  font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.06em;
+  padding:5px 10px;border-radius:99px;
+  border:1px solid var(--border);color:var(--ink-3);
+  white-space:nowrap;
+}
+
+/* FEATURES */
+.section-label{
+  font-family:'DM Mono',monospace;font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3);
+  text-align:center;margin-bottom:16px;
+}
+.features{padding:80px 0}
+.feat-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;
+}
+.feat-card{
+  background:var(--surf);border:1px solid var(--border);border-radius:14px;
+  padding:24px;position:relative;overflow:hidden;
+}
+.feat-card::after{
+  content:attr(data-n);position:absolute;top:-16px;right:8px;
+  font-family:'Fraunces',serif;font-size:72px;font-weight:200;
+  color:var(--border);line-height:1;pointer-events:none;
+}
+.feat-card h3{font-family:'Fraunces',serif;font-size:22px;font-weight:400;margin-bottom:10px;color:var(--ink)}
+.feat-card p{font-size:13.5px;color:var(--ink-2);line-height:1.6}
+
+/* DOWNLOAD */
+.download{padding:80px 0}
+#download h2{
+  font-family:'Fraunces',serif;font-size:clamp(32px,4vw,48px);
+  font-weight:200;letter-spacing:-.02em;margin-bottom:12px;
+}
+.dl-sub{font-size:15px;color:var(--ink-2);margin-bottom:40px;max-width:480px}
+.dl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.dl-card{
+  background:var(--surf);border:1px solid var(--border);border-radius:14px;
+  padding:22px 24px;display:flex;align-items:center;gap:16px;
+  text-decoration:none;color:var(--ink);transition:border-color .15s,box-shadow .15s;
+}
+.dl-card:hover{border-color:var(--ink-3);box-shadow:0 4px 20px rgba(24,18,8,.06)}
+.dl-icon{
+  width:44px;height:44px;border-radius:10px;
+  background:var(--surf-2);display:flex;align-items:center;justify-content:center;
+  font-size:22px;flex-shrink:0;
+}
+.dl-info{flex:1}
+.dl-os{font-size:14px;font-weight:500;margin-bottom:2px}
+.dl-ver{font-family:'DM Mono',monospace;font-size:10.5px;color:var(--ink-3);letter-spacing:.04em}
+.dl-arrow{font-size:16px;color:var(--ink-3)}
+.dl-note{
+  margin-top:18px;font-size:13px;color:var(--ink-3);
+  background:var(--surf);border-radius:10px;padding:12px 16px;
+  border:1px solid var(--border);
+}
+.dl-note code{
+  font-family:'DM Mono',monospace;font-size:12px;
+  background:var(--surf-2);padding:2px 6px;border-radius:4px;color:var(--ink-2);
+}
+
+/* MOBILE */
+.mobile{padding:80px 0}
+.mobile-grid{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start}
+.mobile h2{
+  font-family:'Fraunces',serif;font-size:clamp(30px,3.5vw,42px);
+  font-weight:200;letter-spacing:-.02em;margin-bottom:12px;
+}
+.mobile-sub{font-size:14.5px;color:var(--ink-2);line-height:1.65;margin-bottom:28px}
+.platform-row{
+  display:flex;flex-direction:column;gap:10px;
+}
+.platform-card{
+  background:var(--surf);border:1px solid var(--border);border-radius:12px;
+  padding:16px 18px;display:flex;align-items:flex-start;gap:14px;
+}
+.platform-card.android .plat-icon{background:var(--amber-bg);color:var(--amber)}
+.platform-card.ios .plat-icon{background:#F0EAF9;color:#7C3AED}
+.plat-icon{
+  width:36px;height:36px;border-radius:8px;font-size:18px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.plat-title{font-size:13.5px;font-weight:500;margin-bottom:3px}
+.plat-desc{font-size:12px;color:var(--ink-2);line-height:1.5}
+.badge-pill{
+  display:inline-block;font-family:'DM Mono',monospace;font-size:10px;
+  letter-spacing:.04em;padding:2px 8px;border-radius:99px;margin-top:6px;
+}
+.badge-pill.dev{background:var(--amber-bg);color:var(--amber)}
+.badge-pill.pwa{background:#E6F4EA;color:var(--green)}
+
+/* Phone mockup */
+.phone-wrap{display:flex;justify-content:center;padding-top:8px}
+.phone{
+  width:220px;
+  background:var(--surf);border:1px solid var(--border);border-radius:28px;
+  overflow:hidden;box-shadow:0 16px 48px rgba(24,18,8,.10);
+}
+.phone-notch{height:28px;background:var(--surf-2);display:flex;align-items:center;justify-content:center}
+.phone-notch-bar{width:60px;height:5px;background:var(--ink-3);border-radius:99px;opacity:.3}
+.phone-body{padding:16px 14px}
+.phone-logo{font-family:'Fraunces',serif;font-size:11px;font-weight:400;margin-bottom:10px;color:var(--ink-2)}
+.phone-logo em{font-style:italic;color:var(--amber)}
+.phone-eye{font-family:'DM Mono',monospace;font-size:7px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:6px}
+.phone-time{font-family:'Fraunces',serif;font-size:32px;font-weight:200;letter-spacing:-.02em;line-height:.9;margin-bottom:12px}
+.phone-arc{display:flex;justify-content:center;margin-bottom:12px}
+.phone-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--border)}
+.phone-rn{font-size:9px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+.phone-rt{height:2px;flex:0 0 50px;background:var(--surf-2);border-radius:99px;overflow:hidden}
+.phone-rb{height:100%;border-radius:99px;background:var(--amber)}
+.phone-rv{font-family:'DM Mono',monospace;font-size:8px;color:var(--ink-2);min-width:24px;text-align:right}
+.phone-install{
+  margin-top:10px;padding:7px 10px;
+  background:var(--ink);border-radius:7px;
+  font-size:9px;font-weight:500;color:var(--bg);
+  text-align:center;font-family:'Figtree',sans-serif;
+}
+
+/* OPEN SOURCE */
+.oss{
+  padding:60px 0;border-top:1px solid var(--border);
+  text-align:center;
+}
+.oss h2{font-family:'Fraunces',serif;font-size:32px;font-weight:200;letter-spacing:-.02em;margin-bottom:10px}
+.oss p{font-size:14px;color:var(--ink-2);margin-bottom:24px}
+
+/* FOOTER */
+footer{
+  border-top:1px solid var(--border);padding:28px 0;
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+}
+.foot-logo{font-family:'Fraunces',serif;font-size:14px;font-weight:400}
+.foot-logo em{font-style:italic;color:var(--amber)}
+.foot-note{font-family:'DM Mono',monospace;font-size:10px;color:var(--ink-3);letter-spacing:.05em}
+.foot-link{font-size:12px;color:var(--ink-3);text-decoration:none}
+.foot-link:hover{color:var(--ink-2)}
+
+/* RESPONSIVE */
+@media(max-width:768px){
+  .hero,.mobile-grid{grid-template-columns:1fr;gap:40px}
+  .mockup{display:none}
+  .phone-wrap{display:none}
+  .dl-grid{grid-template-columns:1fr}
+  .nav-links .nav-link:not(.nav-cta){display:none}
+  footer{flex-direction:column;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="/" class="logo">Focus<em>Lens</em></a>
+    <div class="nav-links">
+      <a href="#features" class="nav-link">Features</a>
+      <a href="#download" class="nav-link">Download</a>
+      <a href="#mobile" class="nav-link">Mobile</a>
+      <a href="https://github.com/Martin-Atanasov123/FocusLens" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+      <a href="#download" class="nav-cta">Download ↓</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <section class="hero">
+    <div>
+      <div class="hero-eyebrow">Open source · Local-first · No accounts</div>
+      <h1>Your screen.<br><em>Your data.</em></h1>
+      <p class="hero-sub">FocusLens tracks how you spend time on your computer and phone — entirely on your device. No cloud, no subscriptions, no data ever leaving your machine.</p>
+      <div class="hero-actions">
+        <a href="#download" class="btn-primary">↓ Download for Windows</a>
+        <a href="https://github.com/Martin-Atanasov123/FocusLens" class="btn-ghost" target="_blank" rel="noopener">View source →</a>
+      </div>
+      <div class="badges" style="margin-top:20px">
+        <span class="badge">Python · Flask · SQLite</span>
+        <span class="badge">Chrome MV3 Extension</span>
+        <span class="badge">MIT License</span>
+      </div>
+    </div>
+
+    <!-- Dashboard mockup -->
+    <div class="mockup">
+      <div class="mock-hdr">
+        <span class="mock-logo">Focus<em>Lens</em></span>
+        <span class="mock-tab on">Today</span>
+        <span class="mock-tab">Limits</span>
+        <span class="mock-tab">Settings</span>
+        <span class="mock-dot"></span>
+      </div>
+      <div class="mock-body">
+        <div class="mock-eye">Active screen time · today</div>
+        <div class="mock-time">3h 47m</div>
+        <div class="mock-date">2026-06-11 · 66% of 8h goal</div>
+        <div class="mock-divider"><span class="mock-dl">Applications</span></div>
+        <div class="mock-row"><span class="mock-rn">Visual Studio Code</span><div class="mock-rt"><div class="mock-rb" style="width:100%"></div></div><span class="mock-rv">1h 32m</span></div>
+        <div class="mock-row"><span class="mock-rn">Google Chrome</span><div class="mock-rt"><div class="mock-rb" style="width:73%;opacity:.8"></div></div><span class="mock-rv">1h 07m</span></div>
+        <div class="mock-row"><span class="mock-rn">Slack</span><div class="mock-rt"><div class="mock-rb" style="width:46%;opacity:.65"></div></div><span class="mock-rv">43m</span></div>
+        <div class="mock-divider" style="margin-top:10px"><span class="mock-dl">Websites · via extension</span></div>
+        <div class="mock-row"><span class="mock-rn">github.com</span><div class="mock-rt"><div class="mock-rb" style="width:100%;background:var(--ink-2);opacity:.4"></div></div><span class="mock-rv">1h 18m</span></div>
+        <div class="mock-row"><span class="mock-rn">notion.so</span><div class="mock-rt"><div class="mock-rb" style="width:45%;background:var(--ink-2);opacity:.4"></div></div><span class="mock-rv">35m</span></div>
+        <div class="mock-row" style="border:none"><span class="mock-rn">youtube.com</span><div class="mock-rt"><div class="mock-rb" style="width:27%;background:var(--ink-2);opacity:.4"></div></div><span class="mock-rv">21m</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features" id="features">
+    <div class="section-label">What it does</div>
+    <div class="feat-grid">
+      <div class="feat-card" data-n="1">
+        <h3>Local-first</h3>
+        <p>All data lives in a SQLite database on your machine. Nothing is sent to any server — ever. Your usage history is completely private.</p>
+      </div>
+      <div class="feat-card" data-n="2">
+        <h3>Desktop agent</h3>
+        <p>A background tray process polls the active window at 1 Hz, detecting idle time and accumulating per-app minute buckets automatically.</p>
+      </div>
+      <div class="feat-card" data-n="3">
+        <h3>Browser extension</h3>
+        <p>The Chrome extension tracks active tab domains — not full URLs — and syncs data to the local agent over loopback via a pairing token.</p>
+      </div>
+      <div class="feat-card" data-n="4">
+        <h3>Soft limits</h3>
+        <p>Set daily time limits on any app or domain. Native desktop notifications fire at 50%, 80% and 100% of your limit — once per threshold per day.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section class="download" id="download">
+    <div class="section-label">Get started</div>
+    <h2>Download FocusLens</h2>
+    <p class="dl-sub">Packaged installers coming soon. For now, run from source — takes under 2 minutes.</p>
+    <div class="dl-grid">
+      <a href="https://github.com/Martin-Atanasov123/FocusLens/releases" class="dl-card" target="_blank" rel="noopener">
+        <div class="dl-icon">🪟</div>
+        <div class="dl-info">
+          <div class="dl-os">Windows</div>
+          <div class="dl-ver">Releases page →</div>
+        </div>
+        <div class="dl-arrow">↗</div>
+      </a>
+      <a href="https://github.com/Martin-Atanasov123/FocusLens/releases" class="dl-card" target="_blank" rel="noopener">
+        <div class="dl-icon">🍎</div>
+        <div class="dl-info">
+          <div class="dl-os">macOS</div>
+          <div class="dl-ver">Releases page →</div>
+        </div>
+        <div class="dl-arrow">↗</div>
+      </a>
+      <a href="https://github.com/Martin-Atanasov123/FocusLens/releases" class="dl-card" target="_blank" rel="noopener">
+        <div class="dl-icon">🐧</div>
+        <div class="dl-info">
+          <div class="dl-os">Linux</div>
+          <div class="dl-ver">Releases page →</div>
+        </div>
+        <div class="dl-arrow">↗</div>
+      </a>
+    </div>
+    <div class="dl-note">
+      <strong>Install from source:</strong>
+      <code>git clone https://github.com/Martin-Atanasov123/FocusLens</code> →
+      <code>cd apps/desktop</code> →
+      <code>pip install -r requirements.txt</code> →
+      <code>python run.py</code>
+    </div>
+  </section>
+
+  <!-- MOBILE -->
+  <section class="mobile" id="mobile">
+    <div class="section-label">Mobile companion</div>
+    <div class="mobile-grid">
+      <div>
+        <h2>Track your phone<br><em>too.</em></h2>
+        <p class="mobile-sub">FocusLens syncs with your phone over your local Wi-Fi network. No internet connection required — your data never touches a cloud server.</p>
+        <div class="platform-row">
+          <div class="platform-card android">
+            <div class="plat-icon">🤖</div>
+            <div>
+              <div class="plat-title">Android</div>
+              <div class="plat-desc">Native app tracks all installed apps in the background using the Android <code style="font-family:monospace;font-size:11px">UsageStatsManager</code> API. Syncs with your desktop over Wi-Fi.</div>
+              <span class="badge-pill dev">In development</span>
+            </div>
+          </div>
+          <div class="platform-card ios">
+            <div class="plat-icon">🍎</div>
+            <div>
+              <div class="plat-title">iPhone / iPad</div>
+              <div class="plat-desc">Apple restricts third-party access to Screen Time data. iOS companion can view your desktop stats but cannot track phone app usage. Install as a home screen web app via Safari.</div>
+              <span class="badge-pill pwa">Dashboard viewer · PWA</span>
+            </div>
+          </div>
+          <div class="platform-card" style="">
+            <div class="plat-icon" style="background:var(--surf-2)">📱</div>
+            <div>
+              <div class="plat-title">Pair via QR code</div>
+              <div class="plat-desc">Open Settings in the desktop dashboard and tap "Show QR" — scan with your phone to instantly open the dashboard on mobile. Same Wi-Fi required.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone mockup -->
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="phone-notch"><div class="phone-notch-bar"></div></div>
+          <div class="phone-body">
+            <div class="phone-logo">Focus<em>Lens</em></div>
+            <div class="phone-eye">Active today</div>
+            <div class="phone-time">3h 47m</div>
+            <div class="phone-arc">
+              <svg width="120" height="72" viewBox="0 0 120 72" style="overflow:visible">
+                <path d="M 12,60 A 48,48 0 0,0 108,60" fill="none" stroke="#E0D9CB" stroke-width="5" stroke-linecap="round"/>
+                <path d="M 12,60 A 48,48 0 0,0 108,60" fill="none" stroke="#B26A0A" stroke-width="5" stroke-linecap="round" stroke-dasharray="150.8" stroke-dashoffset="51.3"/>
+                <text x="60" y="46" text-anchor="middle" font-size="14" font-weight="400" fill="#1C1610" font-family="Fraunces,serif">66%</text>
+                <text x="60" y="58" text-anchor="middle" font-size="7" fill="#A8A098" font-family="Figtree,sans-serif" letter-spacing="1.5">OF GOAL</text>
+              </svg>
+            </div>
+            <div class="phone-row"><span class="phone-rn">VS Code</span><div class="phone-rt"><div class="phone-rb" style="width:100%"></div></div><span class="phone-rv">1h 32m</span></div>
+            <div class="phone-row"><span class="phone-rn">Chrome</span><div class="phone-rt"><div class="phone-rb" style="width:73%;opacity:.8"></div></div><span class="phone-rv">1h 07m</span></div>
+            <div class="phone-row" style="border:none"><span class="phone-rn">Slack</span><div class="phone-rt"><div class="phone-rb" style="width:46%;opacity:.65"></div></div><span class="phone-rv">43m</span></div>
+            <div class="phone-install">+ Add to Home Screen</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OPEN SOURCE -->
+  <section class="oss">
+    <h2>Free & open source</h2>
+    <p>All code is on GitHub under the MIT license. No telemetry, no analytics, no tracking of the tracker.</p>
+    <a href="https://github.com/Martin-Atanasov123/FocusLens" class="btn-primary" target="_blank" rel="noopener" style="display:inline-flex">
+      ★ Star on GitHub
+    </a>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="foot-logo">Focus<em>Lens</em></div>
+    <span class="foot-note">Built with Python · Flask · SQLite · Chrome MV3</span>
+    <a href="https://github.com/Martin-Atanasov123/FocusLens" class="foot-link" target="_blank" rel="noopener">GitHub →</a>
+  </footer>
+
+</div>
+</body>
+</html>
