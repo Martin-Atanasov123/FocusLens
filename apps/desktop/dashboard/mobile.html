@@ -180,9 +180,23 @@ function renderList(id, items, dom, empty) {
     el.querySelectorAll('.u-bar').forEach(b=>setTimeout(()=>b.style.width=b.dataset.w+'%',80)));
 }
 
+// Remote (tunnel) access: token arrives in the URL once, then is persisted
+// and sent on every API call. Local LAN access works with no token.
+const _qs = new URLSearchParams(location.search);
+if (_qs.get('token')) {
+  localStorage.setItem('fl_token', _qs.get('token'));
+  // strip token from the visible URL
+  history.replaceState(null, '', location.pathname);
+}
+const _TOKEN = localStorage.getItem('fl_token') || '';
+function api(path) {
+  const headers = _TOKEN ? {'x-focuslens-token': _TOKEN} : {};
+  return fetch(path, {headers});
+}
+
 async function load() {
   try {
-    const d = await (await fetch('/api/summary')).json();
+    const d = await (await api('/api/summary')).json();
     document.getElementById('hero-num').textContent = fmt(d.totalActiveSecs);
     document.getElementById('hero-date').textContent = d.date;
     const f = document.getElementById('g-fill');

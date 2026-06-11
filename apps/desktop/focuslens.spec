@@ -10,10 +10,15 @@ block_cipher = None
 ROOT = Path(SPECPATH)
 DASHBOARD = ROOT / "dashboard"
 
+# Bundle cloudflared (for "Remote access (anywhere)") if it sits next to the
+# spec. Drop cloudflared.exe in apps/desktop/ before building to include it.
+_cf = ROOT / "cloudflared.exe"
+_binaries = [(str(_cf), ".")] if _cf.exists() else []
+
 a = Analysis(
     ["run.py"],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=_binaries,
     datas=[
         (str(DASHBOARD / "index.html"),  "dashboard"),
         (str(DASHBOARD / "mobile.html"), "dashboard"),

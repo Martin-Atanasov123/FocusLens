@@ -393,8 +393,9 @@ code.tok{
 <div class="qr-back" id="qr-back" onclick="closeQR(event)">
   <div class="qr-box">
     <div class="qr-tabs">
-      <button class="qr-tab on" id="qrtab-view" onclick="setQRMode('view')">View dashboard</button>
-      <button class="qr-tab" id="qrtab-pair" onclick="setQRMode('pair')">Pair phone app</button>
+      <button class="qr-tab on" id="qrtab-view" onclick="setQRMode('view')">View (Wi-Fi)</button>
+      <button class="qr-tab" id="qrtab-pair" onclick="setQRMode('pair')">Pair app</button>
+      <button class="qr-tab" id="qrtab-remote" onclick="setQRMode('remote')">Anywhere</button>
     </div>
     <div class="qr-t" id="qr-t">Open on your phone</div>
     <div class="qr-s" id="qr-s">Connect to the same Wi-Fi network,<br>then scan to open the dashboard.</div>
@@ -555,15 +556,16 @@ function copyTok(e) {
 }
 
 let _qrMode = 'view';
-let _qrHost = null, _qrPort = 48732, _qrToken = '';
+let _qrHost = null, _qrPort = 48732, _qrToken = '', _qrTunnel = null;
 
 async function openQR() {
   document.getElementById('qr-back').classList.add('open');
-  // Resolve local IP + token once per open.
+  // Resolve local IP, tunnel URL + token once per open.
   try {
     const d = await (await fetch('/api/network-info')).json();
     _qrHost = (d.localIp && d.localIp!=='127.0.0.1') ? d.localIp : location.hostname;
     _qrPort = d.port || 48732;
+    _qrTunnel = d.tunnelUrl || null;
   } catch { _qrHost = location.hostname; }
   try {
     const s = await (await fetch('/api/settings')).json();
@@ -576,32 +578,55 @@ function setQRMode(mode) {
   _qrMode = mode;
   document.getElementById('qrtab-view').classList.toggle('on', mode==='view');
   document.getElementById('qrtab-pair').classList.toggle('on', mode==='pair');
+  document.getElementById('qrtab-remote').classList.toggle('on', mode==='remote');
   renderQR();
 }
 
 function renderQR() {
   const host = _qrHost || location.hostname;
-  let payload, title, sub;
+  let payload, title, sub, urlLabel;
 
   if (_qrMode === 'pair') {
-    payload = 'focuslens://pair?host='+encodeURIComponent(host)
-            + '&port='+_qrPort
-            + '&token='+encodeURIComponent(_qrToken);
+    if (_qrTunnel) {
+      payload = 'focuslens://pair?url='+encodeURIComponent(_qrTunnel)
+              + '&token='+encodeURIComponent(_qrToken);
+      urlLabel = _qrTunnel+' · works anywhere';
+    } else {
+      payload = 'focuslens://pair?host='+encodeURIComponent(host)
+              + '&port='+_qrPort
+              + '&token='+encodeURIComponent(_qrToken);
+      urlLabel = host+':'+_qrPort+' · same Wi-Fi · token '+(_qrToken? _qrToken.slice(0,6)+'…':'—');
+    }
     title = 'Pair the phone app';
-    sub = 'Install the FocusLens Android app, then scan<br>this code — host &amp; token fill in automatically.';
+    sub = 'Install the FocusLens Android app, then scan<br>this code — connection &amp; token fill in automatically.';
+  } else if (_qrMode === 'remote') {
+    if (_qrTunnel) {
+      payload = _qrTunnel+'/mobile?token='+encodeURIComponent(_qrToken);
+      title = 'Open from anywhere';
+      sub = 'Works on any network — no extra app.<br>Scan to open the dashboard on your phone.';
+      urlLabel = _qrTunnel;
+    } else {
+      title = 'Remote access is off';
+      sub = 'Enable it from the tray icon →<br><strong>“Remote access (anywhere)”</strong>, then reopen this.';
+      urlLabel = 'Tunnel not active';
+    }
   } else {
     payload = 'http://'+host+':'+_qrPort+'/';
     title = 'Open on your phone';
     sub = 'Connect to the same Wi-Fi network,<br>then scan to open the dashboard.';
+    urlLabel = payload;
   }
 
   document.getElementById('qr-t').textContent = title;
   document.getElementById('qr-s').innerHTML = sub;
-  document.getElementById('qr-url').textContent =
-    _qrMode === 'pair' ? (host+':'+_qrPort+' · token '+(_qrToken? _qrToken.slice(0,6)+'…':'—')) : payload;
+  document.getElementById('qr-url').textContent = urlLabel;
 
   const el = document.getElementById('qr-cv');
   el.innerHTML = '';
+  if (!payload) {
+    el.innerHTML = '<p style="font-size:12px;color:var(--ink-2);padding:40px 10px">📡<br>Turn on remote access in the tray first.</p>';
+    return;
+  }
   if (typeof QRCode !== 'undefined') {
     new QRCode(el, {
       text: payload, width: 210, height: 210,

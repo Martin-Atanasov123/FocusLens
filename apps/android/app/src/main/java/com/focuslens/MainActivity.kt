@@ -53,14 +53,24 @@ class MainActivity : ComponentActivity() {
         handlePairLink(intent)
     }
 
-    /** Parses focuslens://pair?host=&port=&token= from a scanned QR code. */
+    /**
+     * Parses the pairing QR. Two shapes:
+     *   focuslens://pair?host=192.168.1.5&port=48732&token=...   (LAN)
+     *   focuslens://pair?url=https://xxx.trycloudflare.com&token=...  (anywhere)
+     */
     private fun handlePairLink(intent: Intent?) {
         val data: Uri = intent?.data ?: return
         if (data.scheme != "focuslens" || data.host != "pair") return
-        val host = data.getQueryParameter("host") ?: return
-        val port = data.getQueryParameter("port") ?: "48732"
         val token = data.getQueryParameter("token") ?: ""
-        pairing.value = "http://$host:$port" to token
+        val explicitUrl = data.getQueryParameter("url")
+        val base = if (!explicitUrl.isNullOrBlank()) {
+            explicitUrl.trimEnd('/')
+        } else {
+            val host = data.getQueryParameter("host") ?: return
+            val port = data.getQueryParameter("port") ?: "48732"
+            "http://$host:$port"
+        }
+        pairing.value = base to token
     }
 
     private fun openUsageAccessSettings() {

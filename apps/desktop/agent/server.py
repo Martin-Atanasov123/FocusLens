@@ -23,15 +23,42 @@ from .limits import check_and_fire
 from .timeutil import today_local
 
 TOKEN_HEADER = "x-focuslens-token"
-DASHBOARD_HTML = Path(__file__).parent.parent / "dashboard" / "index.html"
+DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
+DASHBOARD_HTML = DASHBOARD_DIR / "index.html"
+MOBILE_HTML = DASHBOARD_DIR / "mobile.html"
+MANIFEST_JSON = DASHBOARD_DIR / "manifest.json"
+
+# Paths reachable without a token even over the tunnel (HTML shells + health).
+# They carry no private data; the JS they load must supply the token for API calls.
+_PUBLIC_PATHS = {"/ping", "/", "/mobile", "/manifest.json"}
 
 
-MOBILE_HTML = Path(__file__).parent.parent / "dashboard" / "mobile.html"
-
-
-def create_app(store, is_paused: threading.Event, port: int = 48732) -> Flask:
+def create_app(store, is_paused: threading.Event, port: int = 48732, tunnel=None) -> Flask:
     app = Flask(__name__)
     app.config["JSON_SORT_KEYS"] = False
+
+    def _is_remote() -> bool:
+        # cloudflared injects forwarding headers; local loopback requests do not.
+        return bool(
+            request.headers.get("cf-connecting-ip")
+            or request.headers.get("x-forwarded-for")
+        )
+
+    def _supplied_token() -> str | None:
+        return request.headers.get(TOKEN_HEADER) or request.args.get("token")
+
+    @app.before_request
+    def _guard_remote():
+        # Local requests keep loopback trust. Remote (tunnelled) requests must
+        # carry the pairing token on every non-public path.
+        if request.method == "OPTIONS" or not _is_remote():
+            return None
+        if request.path in _PUBLIC_PATHS:
+            return None
+        expected = store.get_setting("pairing_token")
+        if not (expected and _supplied_token() == expected):
+            return jsonify(error="token required for remote access"), 401
+        return None
 
     def _cors(response):
         response.headers["Access-Control-Allow-Origin"] = "*"
@@ -60,6 +87,10 @@ def create_app(store, is_paused: threading.Event, port: int = 48732) -> Flask:
     def mobile():
         return send_file(MOBILE_HTML)
 
+    @app.route("/manifest.json")
+    def manifest():
+        return send_file(MANIFEST_JSON)
+
     @app.route("/api/network-info")
     def api_network_info():
         import socket
@@ -70,7 +101,8 @@ def create_app(store, is_paused: threading.Event, port: int = 48732) -> Flask:
             s.close()
         except Exception:
             local_ip = "127.0.0.1"
-        return jsonify(localIp=local_ip, port=port)
+        tunnel_url = tunnel.url if (tunnel and tunnel.running) else None
+        return jsonify(localIp=local_ip, port=port, tunnelUrl=tunnel_url)
 
     # ---- token guard -------------------------------------------------------
 

@@ -40,12 +40,14 @@ def main() -> None:
     from agent.server import create_app
     from agent.sampler import Sampler
     from agent.limits import check_and_fire
+    from agent.tunnel import Tunnel
 
     store = Store(DATA_DIR / "focuslens.db")
     is_paused = threading.Event()
+    tunnel = Tunnel(port=PORT)
 
     # ---- Flask thread -------------------------------------------------------
-    flask_app = create_app(store, is_paused, port=PORT)
+    flask_app = create_app(store, is_paused, port=PORT, tunnel=tunnel)
 
     def run_flask():
         import logging
@@ -84,7 +86,19 @@ def main() -> None:
         else:
             is_paused.set()
 
+    def toggle_remote(icon, item):
+        if tunnel.running:
+            tunnel.stop()
+            print("[FocusLens] remote access disabled")
+        else:
+            try:
+                url = tunnel.start()
+                print(f"[FocusLens] remote access enabled — {url}")
+            except Exception as e:
+                print(f"[FocusLens] could not enable remote access: {e}")
+
     def quit_app(icon, item):
+        tunnel.stop()
         icon.stop()
         sys.exit(0)
 
@@ -94,6 +108,11 @@ def main() -> None:
             "Pause Tracking",
             toggle_pause,
             checked=lambda item: is_paused.is_set(),
+        ),
+        pystray.MenuItem(
+            "Remote access (anywhere)",
+            toggle_remote,
+            checked=lambda item: tunnel.running,
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit FocusLens", quit_app),
