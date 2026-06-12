@@ -34,6 +34,9 @@
       ]
     },
     "plugins": [],
+    "install": {
+      "exclude": ["expo-modules-core"]
+    },
     "extra": {
       "eas": {
         "projectId": "ae6489d4-66e4-449a-b817-92cd99f75ed8"
