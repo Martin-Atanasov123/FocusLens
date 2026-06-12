@@ -6,6 +6,7 @@
  * every sync, so repeated syncs never double-count.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as IntentLauncher from "expo-intent-launcher";
 import {
   checkForPermission,
   queryAndAggregateUsageStats,
@@ -34,8 +35,33 @@ export async function hasUsagePermission(): Promise<boolean> {
   }
 }
 
-export function openUsageAccessSettings(): void {
-  showUsageAccessSettings("com.focuslens.mobile");
+export async function openUsageAccessSettings(): Promise<void> {
+  // PACKAGE_USAGE_STATS is a "special access" permission — Android has no
+  // runtime popup for it, so the best we can do is land the user directly
+  // on the Usage Access settings screen. IntentLauncher is the most
+  // reliable way to fire ACTION_USAGE_ACCESS_SETTINGS on MIUI/HyperOS.
+  try {
+    await IntentLauncher.startActivityAsync(
+      "android.settings.USAGE_ACCESS_SETTINGS"
+    );
+    return;
+  } catch {
+    // fall through to the library helper / generic app settings
+  }
+  try {
+    showUsageAccessSettings("com.focuslens.mobile");
+    return;
+  } catch {
+    // last resort: this app's own settings page
+  }
+  try {
+    await IntentLauncher.startActivityAsync(
+      "android.settings.APPLICATION_DETAILS_SETTINGS",
+      { data: "package:com.focuslens.mobile" }
+    );
+  } catch {
+    // nothing else to try
+  }
 }
 
 /** Today's per-app foreground seconds, top 50. */

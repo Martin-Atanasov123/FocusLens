@@ -158,11 +158,19 @@ export default function App() {
               FocusLens needs the “Usage access” permission to read app screen
               time. Find FocusLens in the list and enable it.
             </Text>
-            <Pressable style={s.btn} onPress={openUsageAccessSettings}>
-              <Text style={s.btnText}>Open settings →</Text>
+            <Pressable
+              style={s.btn}
+              onPress={() => {
+                openUsageAccessSettings().catch(() => {});
+              }}
+            >
+              <Text style={s.btnText}>Open Usage Access settings →</Text>
             </Pressable>
+            <Text style={s.cardBody}>
+              {"There is no popup for this — Android requires it to be toggled once by hand.\n\nXiaomi path if the button doesn't land you there:\nSettings → Apps → Manage apps → FocusLens → Other permissions → View usage data → Enable"}
+            </Text>
             <Pressable style={s.btnGhost} onPress={refresh}>
-              <Text style={s.btnGhostText}>I granted it — re-check</Text>
+              <Text style={s.btnGhostText}>I enabled it — re-check</Text>
             </Pressable>
           </>
         )}
