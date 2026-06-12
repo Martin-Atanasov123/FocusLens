@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Linking as RNLinking,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -11,12 +12,14 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
+import { CameraView, useCameraPermissions } from "expo-camera";
 
 import {
   PairConfig,
   hasUsagePermission,
   loadConfig,
   openUsageAccessSettings,
+  pingDesktop,
   saveConfig,
   syncNow,
   todayUsageSeconds,
@@ -31,6 +34,7 @@ const C = {
   ink3: "#A8A098",
   amber: "#B26A0A",
   green: "#1D6B3F",
+  red: "#B5280A",
 };
 
 function fmt(secs: number): string {
@@ -67,6 +71,14 @@ export default function App() {
   const [manualUrl, setManualUrl] = useState("");
   const [manualToken, setManualToken] = useState("");
   const [loading, setLoading] = useState(true);
+
+  // QR scanner
+  const [scanning, setScanning] = useState(false);
+  const [camPerm, requestCamPerm] = useCameraPermissions();
+  const scanLock = useRef(false);
+
+  // Connection indicator: null = not paired, true = reachable, false = offline
+  const [connected, setConnected] = useState<boolean | null>(null);
 
   const refresh = useCallback(async () => {
     const perm = await hasUsagePermission();
@@ -107,6 +119,25 @@ export default function App() {
     return () => sub.remove();
   }, [refresh]);
 
+  // Connection heartbeat: ping the desktop every 5s while paired
+  useEffect(() => {
+    if (!cfg) {
+      setConnected(null);
+      return;
+    }
+    let alive = true;
+    const check = async () => {
+      const ok = await pingDesktop(cfg.baseUrl);
+      if (alive) setConnected(ok);
+    };
+    check();
+    const id = setInterval(check, 5000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [cfg]);
+
   // Auto-sync on app open when already paired + permitted
   useEffect(() => {
     if (cfg && permission) {
@@ -131,6 +162,26 @@ export default function App() {
     setCfg(pc);
   }, [manualUrl, manualToken]);
 
+  const startScan = useCallback(async () => {
+    if (!camPerm?.granted) {
+      const res = await requestCamPerm();
+      if (!res.granted) return;
+    }
+    scanLock.current = false;
+    setScanning(true);
+  }, [camPerm, requestCamPerm]);
+
+  const onScanned = useCallback(async ({ data }: { data: string }) => {
+    if (scanLock.current) return;
+    const pc = parsePairUrl(data);
+    if (pc) {
+      scanLock.current = true;
+      setScanning(false);
+      await saveConfig(pc);
+      setCfg(pc);
+    }
+  }, []);
+
   if (loading) {
     return (
       <View style={[s.root, s.center]}>
@@ -139,6 +190,15 @@ export default function App() {
     );
   }
 
+  const statusColor =
+    connected === true ? C.green : connected === false ? C.red : C.ink3;
+  const statusText =
+    connected === true
+      ? "Connected to desktop"
+      : connected === false
+      ? "Desktop unreachable"
+      : "Not paired yet";
+
   return (
     <View style={s.root}>
       <StatusBar style="dark" />
@@ -146,6 +206,12 @@ export default function App() {
         Focus<Text style={s.logoEm}>Lens</Text>
       </Text>
       <Text style={s.tag}>Android companion</Text>
+
+      {/* Connection indicator */}
+      <View style={s.statusRow}>
+        <View style={[s.statusDot, { backgroundColor: statusColor }]} />
+        <Text style={s.statusText}>{statusText}</Text>
+      </View>
 
       {/* Step 1: usage permission */}
       <View style={s.card}>
@@ -182,15 +248,23 @@ export default function App() {
           {cfg ? "✓ Paired with desktop" : "2 · Pair with your desktop"}
         </Text>
         {cfg ? (
-          <Text style={s.cardBody} numberOfLines={1}>
-            {cfg.baseUrl}
-          </Text>
+          <>
+            <Text style={s.cardBody} numberOfLines={1}>
+              {cfg.baseUrl}
+            </Text>
+            <Pressable style={s.btnGhost} onPress={startScan}>
+              <Text style={s.btnGhostText}>Re-pair / scan a different QR</Text>
+            </Pressable>
+          </>
         ) : (
           <>
             <Text style={s.cardBody}>
-              Easiest: open the desktop dashboard → Settings → Show QR → “Pair
-              app”, then scan with your camera. Or enter manually:
+              On the desktop: Settings → Show QR → “Pair app”, then scan it here.
             </Text>
+            <Pressable style={s.btn} onPress={startScan}>
+              <Text style={s.btnText}>📷 Scan QR code</Text>
+            </Pressable>
+            <Text style={s.orText}>— or enter manually —</Text>
             <TextInput
               style={s.input}
               placeholder="http://192.168.1.100:48732"
@@ -207,8 +281,8 @@ export default function App() {
               value={manualToken}
               onChangeText={setManualToken}
             />
-            <Pressable style={s.btn} onPress={savePairing}>
-              <Text style={s.btnText}>Save</Text>
+            <Pressable style={s.btnGhost} onPress={savePairing}>
+              <Text style={s.btnGhostText}>Save manual pairing</Text>
             </Pressable>
           </>
         )}
@@ -228,7 +302,7 @@ export default function App() {
                 : "Sync now"}
             </Text>
           </Pressable>
-          <Text style={s.note}>Auto-syncs in the background every ~15 min.</Text>
+          <Text style={s.note}>Syncs automatically each time you open the app.</Text>
 
           <Text style={s.listHeader}>TODAY ON THIS PHONE</Text>
           <FlatList
@@ -250,6 +324,23 @@ export default function App() {
           />
         </>
       )}
+
+      {/* QR scanner modal */}
+      <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
+        <View style={s.scanRoot}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={onScanned}
+          />
+          <View style={s.scanFrame} />
+          <Text style={s.scanHint}>Point at the “Pair app” QR on your desktop</Text>
+          <Pressable style={s.scanCancel} onPress={() => setScanning(false)}>
+            <Text style={s.btnText}>Cancel</Text>
+          </Pressable>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -259,7 +350,10 @@ const s = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   logo: { fontSize: 26, color: C.ink, fontWeight: "300", letterSpacing: -0.5 },
   logoEm: { fontStyle: "italic", color: C.amber },
-  tag: { fontSize: 12, color: C.ink3, marginBottom: 20 },
+  tag: { fontSize: 12, color: C.ink3, marginBottom: 12 },
+  statusRow: { flexDirection: "row", alignItems: "center", marginBottom: 18 },
+  statusDot: { width: 9, height: 9, borderRadius: 5, marginRight: 8 },
+  statusText: { fontSize: 12.5, color: C.ink2, fontWeight: "500" },
   card: {
     backgroundColor: C.surf,
     borderColor: C.border,
@@ -280,6 +374,7 @@ const s = StyleSheet.create({
   btnText: { color: C.bg, fontSize: 13.5, fontWeight: "600" },
   btnGhost: { paddingVertical: 10, alignItems: "center" },
   btnGhostText: { color: C.ink2, fontSize: 12.5 },
+  orText: { fontSize: 11, color: C.ink3, textAlign: "center", marginVertical: 10 },
   input: {
     backgroundColor: C.bg,
     borderColor: C.border,
@@ -308,4 +403,30 @@ const s = StyleSheet.create({
   },
   rowLabel: { fontSize: 13.5, color: C.ink, flex: 1, marginRight: 12 },
   rowVal: { fontSize: 12.5, color: C.ink2, fontVariant: ["tabular-nums"] },
+  // scanner
+  scanRoot: { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
+  scanFrame: {
+    width: 240,
+    height: 240,
+    borderColor: "#fff",
+    borderWidth: 3,
+    borderRadius: 20,
+    backgroundColor: "transparent",
+  },
+  scanHint: {
+    position: "absolute",
+    top: 90,
+    color: "#fff",
+    fontSize: 14,
+    textAlign: "center",
+    paddingHorizontal: 30,
+  },
+  scanCancel: {
+    position: "absolute",
+    bottom: 60,
+    backgroundColor: "rgba(28,22,16,0.85)",
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+  },
 });

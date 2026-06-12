@@ -33,7 +33,14 @@
         }
       ]
     },
-    "plugins": [],
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FocusLens uses the camera to scan the pairing QR code from your desktop dashboard."
+        }
+      ]
+    ],
     "install": {
       "exclude": ["expo-modules-core"]
     },

@@ -23,6 +23,23 @@ export async function loadConfig(): Promise<PairConfig | null> {
   return raw ? JSON.parse(raw) : null;
 }
 
+/** Health-check the desktop agent. /ping is public (no token needed). */
+export async function pingDesktop(baseUrl: string): Promise<boolean> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(baseUrl.replace(/\/+$/, "") + "/ping", {
+      method: "GET",
+      signal: ctrl.signal,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function saveConfig(cfg: PairConfig): Promise<void> {
   await AsyncStorage.setItem("fl_config", JSON.stringify(cfg));
 }
