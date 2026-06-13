@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "desktop-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["run.py"],
+      "cwd": "apps/desktop",
+      "port": 48732
+    },
+    {
+      "name": "mobile-metro",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start"],
+      "cwd": "apps/mobile",
+      "port": 8081
+    }
+  ]
+}
