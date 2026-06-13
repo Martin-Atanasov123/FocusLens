@@ -172,13 +172,17 @@ def main() -> None:
     print(f"[FocusLens] running — dashboard at http://127.0.0.1:{PORT}/")
 
     # First run: open the dashboard so a double-clicked .exe shows something
-    # immediately instead of silently sitting in the tray, and register the
-    # packaged exe to start with Windows so tracking is always on.
+    # immediately instead of silently sitting in the tray.
     if store.get_setting("first_run_done") is None:
         store.set_setting("first_run_done", "1")
-        if getattr(sys, "frozen", False):
-            set_autostart(True)
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
+
+    # Register the packaged exe to start with Windows so tracking is always on.
+    # Tracked separately from first_run so existing installs get it once too;
+    # the user can still turn it off via the "Start with Windows" tray toggle.
+    if getattr(sys, "frozen", False) and store.get_setting("autostart_init") is None:
+        store.set_setting("autostart_init", "1")
+        set_autostart(True)
 
     tray.run()
 
