@@ -19,6 +19,48 @@ else:
 
 PORT = 48732
 
+# ---- Windows autostart (Run key) -------------------------------------------
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_RUN_NAME = "FocusLens"
+
+
+def _autostart_target() -> str | None:
+    """Command to launch on login. Only meaningful for the packaged .exe;
+    autostart from a source checkout is skipped (fragile cwd/imports)."""
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    return None
+
+
+def is_autostart_enabled() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY) as k:
+            winreg.QueryValueEx(k, _RUN_NAME)
+        return True
+    except OSError:
+        return False
+
+
+def set_autostart(enable: bool) -> None:
+    if sys.platform != "win32":
+        return
+    target = _autostart_target()
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
+            if enable and target:
+                winreg.SetValueEx(k, _RUN_NAME, 0, winreg.REG_SZ, target)
+            else:
+                try:
+                    winreg.DeleteValue(k, _RUN_NAME)
+                except FileNotFoundError:
+                    pass
+    except OSError as e:
+        print(f"[FocusLens] autostart change failed: {e}")
+
 
 def _build_icon():
     """Create a simple indigo disc + ring icon with Pillow."""
@@ -97,6 +139,9 @@ def main() -> None:
             except Exception as e:
                 print(f"[FocusLens] could not enable remote access: {e}")
 
+    def toggle_autostart(icon, item):
+        set_autostart(not is_autostart_enabled())
+
     def quit_app(icon, item):
         tunnel.stop()
         icon.stop()
@@ -114,6 +159,11 @@ def main() -> None:
             toggle_remote,
             checked=lambda item: tunnel.running,
         ),
+        pystray.MenuItem(
+            "Start with Windows",
+            toggle_autostart,
+            checked=lambda item: is_autostart_enabled(),
+        ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit FocusLens", quit_app),
     )
@@ -122,9 +172,12 @@ def main() -> None:
     print(f"[FocusLens] running — dashboard at http://127.0.0.1:{PORT}/")
 
     # First run: open the dashboard so a double-clicked .exe shows something
-    # immediately instead of silently sitting in the tray.
+    # immediately instead of silently sitting in the tray, and register the
+    # packaged exe to start with Windows so tracking is always on.
     if store.get_setting("first_run_done") is None:
         store.set_setting("first_run_done", "1")
+        if getattr(sys, "frozen", False):
+            set_autostart(True)
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
 
     tray.run()

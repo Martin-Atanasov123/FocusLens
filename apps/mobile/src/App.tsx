@@ -13,6 +13,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import { WebView } from "react-native-webview";
 
 import {
   PairConfig,
@@ -79,6 +80,7 @@ export default function App() {
   const [manualToken, setManualToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [showDesktop, setShowDesktop] = useState(false);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
 
   // QR scanner
   const [scanning, setScanning] = useState(false);
@@ -222,10 +224,22 @@ export default function App() {
         <Text style={s.tag}>Screen time for your phone</Text>
 
         <View style={s.card}>
-          <Text style={s.cardTitle}>Grant usage access</Text>
+          <Text style={s.cardTitle}>1 · Allow restricted settings</Text>
           <Text style={s.cardBody}>
-            FocusLens reads how long you spend in each app. Android keeps this
-            behind a one-time manual toggle — there is no popup for it.
+            Because FocusLens was installed from an APK (not the Play Store),
+            Android blocks sensitive permissions until you unlock them once.
+            {"\n\n"}Settings → Apps → Manage apps → FocusLens → tap ⋮ (top-right)
+            → “Allow restricted settings”.
+            {"\n\n"}If you don't see that menu item, you can skip straight to
+            step 2 — some phones don't need it.
+          </Text>
+        </View>
+
+        <View style={s.card}>
+          <Text style={s.cardTitle}>2 · Grant usage access</Text>
+          <Text style={s.cardBody}>
+            This is what lets FocusLens read your per-app screen time. There is
+            no popup — it's a one-time manual toggle.
           </Text>
           <Pressable
             style={s.btn}
@@ -303,8 +317,13 @@ export default function App() {
               <Text style={s.cardBody} numberOfLines={1}>
                 {cfg.baseUrl}
               </Text>
-              <Pressable style={s.btn} onPress={doSync} disabled={syncState === "busy"}>
-                <Text style={s.btnText}>
+              {connected === true && (
+                <Pressable style={s.btn} onPress={() => setDashboardOpen(true)}>
+                  <Text style={s.btnText}>🖥️ Open full dashboard</Text>
+                </Pressable>
+              )}
+              <Pressable style={s.btnAlt} onPress={doSync} disabled={syncState === "busy"}>
+                <Text style={s.btnAltText}>
                   {syncState === "busy"
                     ? "Syncing…"
                     : syncState === "ok"
@@ -314,6 +333,11 @@ export default function App() {
                     : "Sync now"}
                 </Text>
               </Pressable>
+              {(syncState === "fail" || connected === false) && (
+                <Text style={s.failHint}>
+                  {"Phone can't reach the computer. Check:\n• Both on the same Wi-Fi\n• Desktop FocusLens is running\n• On the PC, run allow-phone-access.bat as admin (opens the firewall)"}
+                </Text>
+              )}
               <Pressable style={s.btnGhost} onPress={startScan}>
                 <Text style={s.btnGhostText}>Re-pair / scan a different QR</Text>
               </Pressable>
@@ -387,6 +411,33 @@ export default function App() {
         }
       />
 
+      {/* Full desktop dashboard in a WebView */}
+      <Modal
+        visible={dashboardOpen}
+        animationType="slide"
+        onRequestClose={() => setDashboardOpen(false)}
+      >
+        <View style={s.webRoot}>
+          <View style={s.webBar}>
+            <Pressable onPress={() => setDashboardOpen(false)} hitSlop={12}>
+              <Text style={s.webBack}>‹ Back</Text>
+            </Pressable>
+            <Text style={s.webTitle}>FocusLens · full dashboard</Text>
+            <View style={{ width: 48 }} />
+          </View>
+          {cfg && (
+            <WebView
+              source={{
+                uri:
+                  cfg.baseUrl + "/?token=" + encodeURIComponent(cfg.token),
+              }}
+              style={{ flex: 1, backgroundColor: C.bg }}
+              originWhitelist={["*"]}
+            />
+          )}
+        </View>
+      </Modal>
+
       {/* QR scanner modal */}
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
         <View style={s.scanRoot}>
@@ -443,8 +494,11 @@ const s = StyleSheet.create({
   cardBody: { fontSize: 12.5, color: C.ink2, lineHeight: 18, marginBottom: 10 },
   btn: { backgroundColor: C.ink, borderRadius: 10, paddingVertical: 12, alignItems: "center", marginTop: 4 },
   btnText: { color: C.bg, fontSize: 13.5, fontWeight: "600" },
+  btnAlt: { backgroundColor: C.surf2, borderRadius: 10, paddingVertical: 12, alignItems: "center", marginTop: 8 },
+  btnAltText: { color: C.ink, fontSize: 13.5, fontWeight: "600" },
   btnGhost: { paddingVertical: 10, alignItems: "center" },
   btnGhostText: { color: C.ink2, fontSize: 12.5 },
+  failHint: { fontSize: 11.5, color: C.red, lineHeight: 17, marginTop: 10 },
   orText: { fontSize: 11, color: C.ink3, textAlign: "center", marginVertical: 10 },
   input: {
     backgroundColor: C.bg,
@@ -485,6 +539,20 @@ const s = StyleSheet.create({
   statusRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   statusDot: { width: 9, height: 9, borderRadius: 5 },
   statusText: { fontSize: 12.5, color: C.ink2, fontWeight: "500", marginLeft: 8 },
+
+  // full dashboard webview
+  webRoot: { flex: 1, backgroundColor: C.bg, paddingTop: 40 },
+  webBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomColor: C.border,
+    borderBottomWidth: 1,
+  },
+  webBack: { fontSize: 15, color: C.amber, fontWeight: "600", width: 48 },
+  webTitle: { fontSize: 13, color: C.ink2, fontWeight: "500" },
 
   // scanner
   scanRoot: { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },

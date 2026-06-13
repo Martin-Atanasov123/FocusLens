@@ -570,6 +570,20 @@ code.tok{
 </div>
 
 <script>
+// When the dashboard is opened from the phone app (LAN IP or tunnel URL),
+// a ?token=... is appended. Capture it and attach it to every API call so
+// remote (tunnelled) requests pass the _guard_remote check. On loopback the
+// token is empty and nothing changes.
+const _TOKEN = new URLSearchParams(location.search).get('token') || '';
+if (_TOKEN) history.replaceState({}, '', location.pathname);
+const _origFetch = window.fetch.bind(window);
+window.fetch = (url, opts = {}) => {
+  if (_TOKEN && typeof url === 'string' && url.startsWith('/')) {
+    opts = { ...opts, headers: { ...(opts.headers || {}), 'x-focuslens-token': _TOKEN } };
+  }
+  return _origFetch(url, opts);
+};
+
 const ARC = 201.1;
 let _paused = false;
 let _goal = parseFloat(localStorage.getItem('fl_goal') || '8');
