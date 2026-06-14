@@ -62,6 +62,43 @@ def set_autostart(enable: bool) -> None:
         print(f"[FocusLens] autostart change failed: {e}")
 
 
+# ---- Windows firewall (let the phone reach the agent over the LAN) ----------
+_FW_RULE = "FocusLens"
+# Scoped to the local subnet so only devices on your own Wi-Fi/LAN can connect.
+_FW_ARGS = (
+    f'advfirewall firewall add rule name="{_FW_RULE}" dir=in action=allow '
+    f"protocol=TCP localport={PORT} profile=private remoteip=localsubnet"
+)
+
+
+def firewall_rule_exists() -> bool:
+    if sys.platform != "win32":
+        return True
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={_FW_RULE}"],
+            capture_output=True, text=True, timeout=5,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return _FW_RULE in out.stdout
+    except Exception:
+        return False
+
+
+def ensure_firewall_rule() -> None:
+    """Add the inbound LAN rule via a single elevated netsh call (one UAC
+    prompt). No-op if the rule already exists or we're not on Windows."""
+    if sys.platform != "win32" or firewall_rule_exists():
+        return
+    try:
+        import ctypes
+        # "runas" shows the UAC consent dialog; netsh then adds the rule.
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", "netsh", _FW_ARGS, None, 0)
+    except Exception as e:
+        print(f"[FocusLens] firewall auto-add failed: {e}")
+
+
 def _build_icon():
     """Create a simple indigo disc + ring icon with Pillow."""
     from PIL import Image, ImageDraw
@@ -142,6 +179,9 @@ def main() -> None:
     def toggle_autostart(icon, item):
         set_autostart(not is_autostart_enabled())
 
+    def allow_phone(icon, item):
+        ensure_firewall_rule()
+
     def quit_app(icon, item):
         tunnel.stop()
         icon.stop()
@@ -164,6 +204,7 @@ def main() -> None:
             toggle_autostart,
             checked=lambda item: is_autostart_enabled(),
         ),
+        pystray.MenuItem("Allow phone on network…", allow_phone),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit FocusLens", quit_app),
     )
@@ -183,6 +224,13 @@ def main() -> None:
     if getattr(sys, "frozen", False) and store.get_setting("autostart_init") is None:
         store.set_setting("autostart_init", "1")
         set_autostart(True)
+
+    # Open the LAN firewall once (single UAC prompt) so the phone companion can
+    # reach the agent without the user running allow-phone-access.bat by hand.
+    # Retryable any time from the tray ("Allow phone on network…").
+    if getattr(sys, "frozen", False) and store.get_setting("firewall_init") is None:
+        store.set_setting("firewall_init", "1")
+        ensure_firewall_rule()
 
     tray.run()
 

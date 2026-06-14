@@ -1,4 +1,6 @@
-"""Flask HTTP server — loopback only (127.0.0.1:48732).
+"""Flask HTTP server (bound to 0.0.0.0:48732 so LAN devices like the phone
+companion can reach it). Loopback requests are trusted; remote/tunnelled
+requests are gated by _guard_remote and must carry the pairing token.
 
 Routes:
   GET  /ping            — health check (no token)

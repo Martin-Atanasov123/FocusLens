@@ -12,6 +12,7 @@
     ],
     "android": {
       "package": "com.focuslens.mobile",
+      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.PACKAGE_USAGE_STATS",
         "android.permission.INTERNET",
