@@ -15,12 +15,50 @@ import {
 
 export interface PairConfig {
   baseUrl: string;
+  /** Off-network fallback (Cloudflare tunnel). Refreshed from the desktop
+   *  whenever we're on the same Wi-Fi — trycloudflare URLs change on every
+   *  desktop restart, so we never hard-code it. */
+  remoteUrl?: string;
   token: string;
 }
 
 export async function loadConfig(): Promise<PairConfig | null> {
   const raw = await AsyncStorage.getItem("fl_config");
   return raw ? JSON.parse(raw) : null;
+}
+
+/** Pick a reachable base URL: LAN first (fast, no token on public paths),
+ *  then the tunnel fallback. Returns null if neither answers. */
+export async function resolveBaseUrl(cfg: PairConfig): Promise<string | null> {
+  if (await pingDesktop(cfg.baseUrl)) return cfg.baseUrl;
+  if (cfg.remoteUrl && (await pingDesktop(cfg.remoteUrl))) return cfg.remoteUrl;
+  return null;
+}
+
+/** When reachable over LAN, pull the current tunnel URL and remember it as the
+ *  off-network fallback. No-op (keeps the old remoteUrl) when off-LAN. */
+export async function refreshRemoteUrl(cfg: PairConfig): Promise<PairConfig> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 4000);
+  try {
+    const res = await fetch(
+      cfg.baseUrl.replace(/\/+$/, "") + "/api/network-info",
+      { signal: ctrl.signal }
+    );
+    if (!res.ok) return cfg;
+    const d = await res.json();
+    const tunnelUrl = d?.tunnelUrl ? String(d.tunnelUrl) : "";
+    if (tunnelUrl && tunnelUrl !== cfg.remoteUrl) {
+      const updated = { ...cfg, remoteUrl: tunnelUrl };
+      await saveConfig(updated);
+      return updated;
+    }
+  } catch {
+    // not on LAN / desktop offline — keep whatever remoteUrl we already have
+  } finally {
+    clearTimeout(timer);
+  }
+  return cfg;
 }
 
 /** Health-check the desktop agent. /ping is public (no token needed). */
@@ -106,6 +144,9 @@ export async function syncNow(): Promise<boolean> {
   const cfg = await loadConfig();
   if (!cfg?.baseUrl || !cfg.token) return false;
 
+  const base = await resolveBaseUrl(cfg);
+  if (!base) return false;
+
   const usage = await todayUsageSeconds();
   if (usage.length === 0) return true;
 
@@ -124,7 +165,7 @@ export async function syncNow(): Promise<boolean> {
   };
 
   try {
-    const res = await fetch(cfg.baseUrl.replace(/\/+$/, "") + "/events", {
+    const res = await fetch(base.replace(/\/+$/, "") + "/events", {
       method: "POST",
       headers: {
         "content-type": "application/json",

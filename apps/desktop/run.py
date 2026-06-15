@@ -168,8 +168,10 @@ def main() -> None:
     def toggle_remote(icon, item):
         if tunnel.running:
             tunnel.stop()
+            store.set_setting("remote_enabled", "0")
             print("[FocusLens] remote access disabled")
         else:
+            store.set_setting("remote_enabled", "1")
             try:
                 url = tunnel.start()
                 print(f"[FocusLens] remote access enabled — {url}")
@@ -231,6 +233,25 @@ def main() -> None:
     if getattr(sys, "frozen", False) and store.get_setting("firewall_init") is None:
         store.set_setting("firewall_init", "1")
         ensure_firewall_rule()
+
+    # Remote access defaults on (opt-out via the tray). Start the tunnel in the
+    # background — the cloudflared handshake can take ~20s and must not block the
+    # tray. The phone re-reads the (ephemeral) tunnel URL from /api/network-info
+    # while on the LAN, so a changing trycloudflare address self-heals.
+    if store.get_setting("remote_init") is None:
+        store.set_setting("remote_init", "1")
+        store.set_setting("remote_enabled", "1")
+
+    def _auto_start_tunnel():
+        try:
+            url = tunnel.start()
+            print(f"[FocusLens] remote access enabled — {url}")
+        except Exception as e:
+            print(f"[FocusLens] could not enable remote access: {e}")
+
+    if store.get_setting("remote_enabled") == "1":
+        threading.Thread(target=_auto_start_tunnel, daemon=True,
+                         name="focuslens-tunnel-auto").start()
 
     tray.run()
 

@@ -20,7 +20,8 @@ import {
   hasUsagePermission,
   loadConfig,
   openUsageAccessSettings,
-  pingDesktop,
+  refreshRemoteUrl,
+  resolveBaseUrl,
   saveConfig,
   syncNow,
   todayUsageSeconds,
@@ -89,6 +90,8 @@ export default function App() {
 
   // Connection indicator: null = not paired, true = reachable, false = offline
   const [connected, setConnected] = useState<boolean | null>(null);
+  // The currently reachable URL (LAN or tunnel), resolved by the heartbeat.
+  const [activeBase, setActiveBase] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const perm = await hasUsagePermission();
@@ -142,16 +145,19 @@ export default function App() {
     return () => clearInterval(id);
   }, [permission]);
 
-  // Connection heartbeat: ping the desktop every 5s while paired
+  // Connection heartbeat: resolve a reachable URL (LAN → tunnel) every 5s.
   useEffect(() => {
     if (!cfg) {
       setConnected(null);
+      setActiveBase(null);
       return;
     }
     let alive = true;
     const check = async () => {
-      const ok = await pingDesktop(cfg.baseUrl);
-      if (alive) setConnected(ok);
+      const base = await resolveBaseUrl(cfg);
+      if (!alive) return;
+      setConnected(!!base);
+      setActiveBase(base);
     };
     check();
     const id = setInterval(check, 5000);
@@ -161,11 +167,14 @@ export default function App() {
     };
   }, [cfg]);
 
-  // Auto-sync on app open when paired + permitted
+  // On open: learn the current tunnel URL (while on LAN), then sync.
   useEffect(() => {
-    if (cfg && permission) {
+    if (!cfg || !permission) return;
+    (async () => {
+      const updated = await refreshRemoteUrl(cfg);
+      if (updated.remoteUrl !== cfg.remoteUrl) setCfg(updated);
       syncNow().catch(() => {});
-    }
+    })();
   }, [cfg, permission]);
 
   const doSync = useCallback(async () => {
@@ -315,7 +324,8 @@ export default function App() {
           {cfg ? (
             <>
               <Text style={s.cardBody} numberOfLines={1}>
-                {cfg.baseUrl}
+                {activeBase || cfg.baseUrl}
+                {activeBase && activeBase === cfg.remoteUrl ? " · via tunnel" : ""}
               </Text>
               {connected === true && (
                 <Pressable style={s.btn} onPress={() => setDashboardOpen(true)}>
@@ -429,7 +439,9 @@ export default function App() {
             <WebView
               source={{
                 uri:
-                  cfg.baseUrl + "/?token=" + encodeURIComponent(cfg.token),
+                  (activeBase || cfg.baseUrl) +
+                  "/?token=" +
+                  encodeURIComponent(cfg.token),
               }}
               style={{ flex: 1, backgroundColor: C.bg }}
               originWhitelist={["*"]}
