@@ -370,7 +370,7 @@ code.tok{
       <button class="nb on" id="t-today" onclick="show('today')">Today</button>
       <button class="nb" id="t-phone" onclick="show('phone')">Phone</button>
       <button class="nb" id="t-trends" onclick="show('trends')">Trends</button>
-      <button class="nb" id="t-limits" onclick="show('limits')">Limits</button>
+      <button class="nb" id="t-limits" onclick="show('limits')">Goals</button>
       <button class="nb" id="t-settings" onclick="show('settings')">Settings</button>
     </nav>
     <div class="hdr-r">
@@ -457,8 +457,22 @@ code.tok{
     <div class="u-list" id="tr-movers"></div>
   </div>
 
-  <!-- LIMITS -->
+  <!-- GOALS & LIMITS -->
   <div id="pg-limits">
+    <div class="s-rule"><span class="s-rl">Productive-time goals</span></div>
+    <div class="lf">
+      <div class="lf-row">
+        <span style="font-size:12px;color:var(--ink-3);white-space:nowrap">Productive time</span>
+        <input id="ghours" type="number" value="2" min="0.5" max="24" step="0.5" style="width:78px"/>
+        <span style="font-size:12px;color:var(--ink-3);white-space:nowrap">hours</span>
+        <select id="gperiod"><option value="daily">per day</option><option value="weekly">per week</option></select>
+        <button class="btn-p" onclick="addGoal()">Set goal</button>
+      </div>
+      <div class="err" id="gerr"></div>
+    </div>
+    <div id="goals-list"></div>
+
+    <div class="s-rule"><span class="s-rl">Distraction limits</span></div>
     <div class="lf">
       <div class="lf-row">
         <select id="lkind"><option value="domain">Domain</option><option value="app">App</option></select>
@@ -929,27 +943,68 @@ async function delRule(id) {
 
 async function loadLimits() {
   try {
-    const lims = await (await fetch('/api/limits')).json();
+    const all = await (await fetch('/api/limits')).json();
+    renderGoals(all.filter(l=>l.limit_type==='goal'));
+
+    const lims = all.filter(l=>l.limit_type!=='goal');
     const el = document.getElementById('lims-list');
     if (!lims.length) {
       el.innerHTML = '<div class="u-empty">No limits yet. Notifications fire at 50%, 80% and 100%.</div>';
-      return;
+    } else {
+      el.innerHTML = lims.map(l=>{
+        const p = Math.min(100,(l.usedSecsToday/l.limit_secs)*100);
+        const c = p>=100?'var(--red)':p>=80?'#C4890A':'var(--green)';
+        return `<div class="lim-card">
+          <div class="lim-r">
+            <span class="lim-key">${l.target_key}</span>
+            <span class="badge">${l.target_kind}</span>
+            <span class="badge">${l.limit_type} · ${l.period}</span>
+            <span class="lim-used">${fmt(l.usedSecsToday)} / ${fmt(l.limit_secs)}</span>
+            <button class="btn-g" onclick="delLim(${l.id})">Remove</button>
+          </div>
+          <div class="lim-prog"><div class="lim-fill" style="width:${p}%;background:${c}"></div></div>
+        </div>`;
+      }).join('');
     }
-    el.innerHTML = lims.map(l=>{
-      const p = Math.min(100,(l.usedSecsToday/l.limit_secs)*100);
-      const c = p>=100?'var(--red)':p>=80?'#C4890A':'var(--green)';
-      return `<div class="lim-card">
-        <div class="lim-r">
-          <span class="lim-key">${l.target_key}</span>
-          <span class="badge">${l.target_kind}</span>
-          <span class="badge">${l.limit_type} · ${l.period}</span>
-          <span class="lim-used">${fmt(l.usedSecsToday)} / ${fmt(l.limit_secs)}</span>
-          <button class="btn-g" onclick="delLim(${l.id})">Remove</button>
-        </div>
-        <div class="lim-prog"><div class="lim-fill" style="width:${p}%;background:${c}"></div></div>
-      </div>`;
-    }).join('');
   } catch(e){console.error(e)}
+}
+
+// Goals fill UP (green, good); a reached goal turns amber with a ✓.
+function renderGoals(goals) {
+  const el = document.getElementById('goals-list');
+  if (!goals.length) {
+    el.innerHTML = '<div class="u-empty">No goal yet. Set a productive-time target and get a nudge when you hit it.</div>';
+    return;
+  }
+  el.innerHTML = goals.map(g=>{
+    const pct = g.limit_secs>0 ? (g.usedSecsToday/g.limit_secs)*100 : 0;
+    const reached = pct>=100;
+    const c = reached ? 'var(--amber)' : 'var(--green)';
+    return `<div class="lim-card">
+      <div class="lim-r">
+        <span class="lim-key">🎯 ${g.target_key}</span>
+        <span class="badge">${g.period}</span>
+        <span class="lim-used">${fmt(g.usedSecsToday)} / ${fmt(g.limit_secs)}${reached?' ✓':''}</span>
+        <button class="btn-g" onclick="delLim(${g.id})">Remove</button>
+      </div>
+      <div class="lim-prog"><div class="lim-fill" style="width:${Math.min(100,pct)}%;background:${c}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+async function addGoal() {
+  const hours = parseFloat(document.getElementById('ghours').value);
+  const period = document.getElementById('gperiod').value;
+  const err = document.getElementById('gerr');
+  err.textContent = '';
+  if (!hours || hours <= 0) { err.textContent = 'Hours must be greater than 0.'; return; }
+  const r = await fetch('/api/limits',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({target_kind:'category',target_key:'Productive',period,
+      limit_secs:Math.round(hours*3600),limit_type:'goal',enabled:true})
+  });
+  if (!r.ok){err.textContent=(await r.json()).error||'Error';return}
+  loadLimits();
 }
 
 async function addLimit() {

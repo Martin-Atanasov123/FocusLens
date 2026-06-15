@@ -21,6 +21,16 @@ def local_day_bounds(date_str: str) -> tuple[int, int]:
     return start, end
 
 
+def local_week_bounds(date_str: str) -> tuple[int, int, str]:
+    """[start, end) unix-second bounds for the ISO week (Mon–Sun) containing
+    date_str, plus that Monday's date string (used as the per-week dedup key)."""
+    d = date.fromisoformat(date_str)
+    monday = d - timedelta(days=d.weekday())
+    start = _midnight_ts(monday)
+    end = _midnight_ts(monday + timedelta(days=7))
+    return start, end, monday.isoformat()
+
+
 def _midnight_ts(d: date) -> int:
     dt = datetime(d.year, d.month, d.day, tzinfo=None)
     # mktime treats naive datetime as local time

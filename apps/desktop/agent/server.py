@@ -173,13 +173,21 @@ def create_app(store, is_paused: threading.Event, port: int = 48732, tunnel=None
 
     @app.route("/api/limits", methods=["GET"])
     def api_limits_get():
-        from .timeutil import local_day_bounds
+        from .timeutil import local_day_bounds, local_week_bounds
         date_str = today_local()
-        start, end = local_day_bounds(date_str)
-        limits = store.list_limits()
+        day_start, day_end = local_day_bounds(date_str)
         result = []
-        for lim in limits:
-            used = store.usage_total(lim["target_kind"], lim["target_key"], start, end)
+        for lim in store.list_limits():
+            if lim["limit_type"] == "goal":
+                if lim["period"] == "weekly":
+                    s, e, _ = local_week_bounds(date_str)
+                else:
+                    s, e = day_start, day_end
+                used = store.goal_used(lim["target_kind"], lim["target_key"], s, e)
+            else:
+                used = store.usage_total(
+                    lim["target_kind"], lim["target_key"], day_start, day_end
+                )
             result.append({**lim, "usedSecsToday": used, "enabled": bool(lim["enabled"])})
         return jsonify(result)
 

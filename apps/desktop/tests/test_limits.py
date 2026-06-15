@@ -125,3 +125,64 @@ class TestCheckAndFire:
             assert mock_notify.call_count == 3  # 50, 80, 100
             titles = [c[0][0] for c in mock_notify.call_args_list]
             assert any("limit reached" in t for t in titles)
+
+
+class TestGoals:
+    """Goals are productive-time floors: celebrate once on reach, never warn."""
+
+    def _store_with_goal(self, secs=3600, period="daily", enabled=True):
+        store = Store(":memory:")
+        store.upsert_limit({
+            "target_kind": "category", "target_key": "Productive",
+            "period": period, "limit_secs": secs,
+            "limit_type": "goal", "enabled": enabled,
+        })
+        return store
+
+    def _add_productive(self, store, secs, bucket_ts):
+        from agent.engine import UsageRecord
+        store.upsert_usage("desktop", "app", [
+            UsageRecord(bucket_ts=bucket_ts, key="Code.exe",
+                        label="Visual Studio Code", active_secs=secs, idle_secs=0)
+        ])
+
+    def test_goal_not_reached_no_notification(self):
+        store = self._store_with_goal(secs=3600)
+        from agent.timeutil import today_local, local_day_bounds
+        start, _ = local_day_bounds(today_local())
+        self._add_productive(store, 1800, start)  # only 30 of 60 min
+        with patch("agent.limits._notify") as m:
+            check_and_fire(store)
+            m.assert_not_called()
+
+    def test_daily_goal_reached_fires_once(self):
+        store = self._store_with_goal(secs=3600)
+        from agent.timeutil import today_local, local_day_bounds
+        start, _ = local_day_bounds(today_local())
+        self._add_productive(store, 3600, start)
+        with patch("agent.limits._notify") as m:
+            check_and_fire(store)
+            assert m.call_count == 1
+            title, _msg = m.call_args[0]
+            assert "goal reached" in title.lower()
+            check_and_fire(store)               # already celebrated
+            assert m.call_count == 1            # no double-fire
+
+    def test_weekly_goal_uses_week_window(self):
+        store = self._store_with_goal(secs=7200, period="weekly")
+        from agent.timeutil import today_local, local_week_bounds
+        wk_start, _, _ = local_week_bounds(today_local())
+        self._add_productive(store, 7200, wk_start)  # 2h earlier this week
+        with patch("agent.limits._notify") as m:
+            check_and_fire(store)
+            assert m.call_count == 1
+            assert "weekly" in m.call_args[0][1].lower()
+
+    def test_disabled_goal_no_notification(self):
+        store = self._store_with_goal(enabled=False)
+        from agent.timeutil import today_local, local_day_bounds
+        start, _ = local_day_bounds(today_local())
+        self._add_productive(store, 7200, start)
+        with patch("agent.limits._notify") as m:
+            check_and_fire(store)
+            m.assert_not_called()

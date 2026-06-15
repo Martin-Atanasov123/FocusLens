@@ -224,6 +224,34 @@ class Store:
             )
             self._conn.commit()
 
+    def category_total(self, category: str, start: int, end: int) -> int:
+        """Active seconds classified into `category` across desktop apps and
+        extension domains in [start, end). Rows are read under the lock, then
+        classified after release (the rules matcher re-locks; the lock is not
+        reentrant)."""
+        with self._lock:
+            rows = self._conn.execute(
+                """SELECT kind, key, COALESCE(MAX(label), key) AS label,
+                          SUM(active_secs) AS active
+                   FROM usage_minutes
+                   WHERE source IN ('desktop', 'extension')
+                     AND bucket_ts >= ? AND bucket_ts < ?
+                   GROUP BY source, kind, key""",
+                (start, end),
+            ).fetchall()
+        classify = self._rules_matcher()
+        return sum(
+            r["active"] for r in rows
+            if classify(r["kind"], r["key"], r["label"])[0] == category
+        )
+
+    def goal_used(self, kind: str, key: str, start: int, end: int) -> int:
+        """Progress toward a goal: category goals sum a whole category, app/
+        domain goals sum that single target."""
+        if kind == "category":
+            return self.category_total(key, start, end)
+        return self.usage_total(kind, key, start, end)
+
     def usage_total(self, kind: str, key: str, start: int, end: int) -> int:
         with self._lock:
             row = self._conn.execute(
