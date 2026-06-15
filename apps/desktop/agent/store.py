@@ -261,6 +261,23 @@ class Store:
             ).fetchone()
             return int(row[0])
 
+    def delete_device(self, device_id: str) -> int:
+        """Remove a connected phone: delete all its usage rows and its stored
+        name. An empty device_id targets legacy pre-per-device data (source
+        'android'). Returns the number of rows deleted. If the phone keeps
+        syncing it will reappear — remove it on the phone too."""
+        source = f"android:{device_id}" if device_id else "android"
+        with self._lock:
+            n = self._conn.execute(
+                "DELETE FROM usage_minutes WHERE source = ?", (source,)
+            ).rowcount
+            if device_id:
+                self._conn.execute(
+                    "DELETE FROM settings WHERE key = ?", (f"android_device:{device_id}",)
+                )
+            self._conn.commit()
+            return n
+
     # ---- categories ---------------------------------------------------------
 
     def list_categories(self) -> list[dict]:

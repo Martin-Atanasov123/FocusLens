@@ -124,6 +124,14 @@ def create_app(store, is_paused: threading.Event, port: int = 48732, tunnel=None
         except ValueError as e:
             return jsonify(error=str(e)), 400
 
+    @app.route("/api/phones", methods=["DELETE"])
+    def api_phone_delete():
+        # Remove a connected phone and all its recorded time. id="" = legacy
+        # (pre-per-device) data. Guarded like any non-public path over the tunnel.
+        device_id = request.args.get("id", "")
+        deleted = store.delete_device(device_id)
+        return jsonify(deleted=deleted)
+
     @app.route("/api/trends")
     def api_trends():
         days = min(max(int(request.args.get("days", 14)), 7), 90)

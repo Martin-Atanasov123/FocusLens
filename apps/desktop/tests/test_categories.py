@@ -125,6 +125,24 @@ def test_all_sources_sums_desktop_and_phones(store):
     assert s["allSourcesSecs"] == 1000           # combined
 
 
+def test_delete_device_removes_rows_and_name(store):
+    from agent.timeutil import today_local, local_day_bounds
+    day = today_local()
+    start, _ = local_day_bounds(day)
+    store.set_setting("android_device:AAA", "Xiaomi 14")
+    store.set_setting("android_device:BBB", "Pixel 8")
+    store.replace_usage("android:AAA", "app", [rec(start, "com.discord", 600)])
+    store.replace_usage("android:BBB", "app", [rec(start, "com.discord", 400)])
+
+    deleted = store.delete_device("AAA")
+    assert deleted == 1
+
+    s = store.day_summary(day)
+    assert {p["name"] for p in s["phones"]} == {"Pixel 8"}   # AAA gone
+    assert s["phoneActiveSecs"] == 400
+    assert store.get_setting("android_device:AAA") is None    # name forgotten
+
+
 # ---- goals (category totals) ------------------------------------------------
 
 def test_category_total_sums_across_desktop_and_extension(store):

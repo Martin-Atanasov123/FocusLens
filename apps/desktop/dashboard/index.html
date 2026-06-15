@@ -327,10 +327,11 @@ code.tok{
 .phone-empty strong{display:block;font-size:15px;color:var(--ink-2);margin-bottom:8px}
 .phone-dev{margin-bottom:22px}
 .phone-dev-head{
-  display:flex;align-items:baseline;justify-content:space-between;
+  display:flex;align-items:center;justify-content:space-between;
   padding:0 2px 8px;margin-bottom:6px;border-bottom:1px solid var(--border);
 }
 .phone-dev-name{font-size:13px;font-weight:600;color:var(--ink-2)}
+.phone-dev-right{display:flex;align-items:center;gap:10px}
 .phone-dev-tot{font-family:'DM Mono',monospace;font-size:13px;color:var(--amber)}
 
 /* RESPONSIVE */
@@ -816,7 +817,10 @@ async function loadPhone() {
       return `<div class="phone-dev">
         <div class="phone-dev-head">
           <span class="phone-dev-name">📱 ${esc(dev.name)}</span>
-          <span class="phone-dev-tot">${fmt(dev.activeSecs)}</span>
+          <span class="phone-dev-right">
+            <span class="phone-dev-tot">${fmt(dev.activeSecs)}</span>
+            <button class="btn-g" onclick="removePhone('${esc(dev.deviceId)}')">Remove</button>
+          </span>
         </div>
         ${rows}
       </div>`;
@@ -831,6 +835,14 @@ async function loadPhone() {
 function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+async function removePhone(deviceId) {
+  if (!confirm('Remove this phone and all its recorded time? This cannot be undone.')) return;
+  try {
+    await fetch('/api/phones?id=' + encodeURIComponent(deviceId), { method: 'DELETE' });
+  } catch (e) { console.error(e); }
+  loadPhone();
 }
 
 function _renderList(id, items, dom, empty) {
