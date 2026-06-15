@@ -15,6 +15,8 @@ import * as Linking from "expo-linking";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { WebView } from "react-native-webview";
 
+import FocusScreen from "./screens/FocusScreen";
+
 import {
   PairConfig,
   hasUsagePermission,
@@ -82,6 +84,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [showDesktop, setShowDesktop] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
 
   // QR scanner
   const [scanning, setScanning] = useState(false);
@@ -291,6 +294,10 @@ export default function App() {
       <Text style={s.heroNum}>{fmt(totalSecs)}</Text>
       <Text style={s.heroDate}>{todayStr()}</Text>
 
+      <Pressable style={s.focusBtn} onPress={() => setFocusOpen(true)}>
+        <Text style={s.focusBtnText}>Start a focus session</Text>
+      </Pressable>
+
       <View style={s.sectionRule}>
         <Text style={s.sectionLabel}>APPS</Text>
       </View>
@@ -451,6 +458,8 @@ export default function App() {
       </Modal>
 
       {/* QR scanner modal */}
+      <FocusScreen visible={focusOpen} onClose={() => setFocusOpen(false)} />
+
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
         <View style={s.scanRoot}>
           <CameraView
@@ -481,6 +490,8 @@ const s = StyleSheet.create({
   heroEye: { fontSize: 10, letterSpacing: 2, color: C.ink3, marginBottom: 6 },
   heroNum: { fontSize: 64, fontWeight: "200", color: C.ink, letterSpacing: -2, lineHeight: 68 },
   heroDate: { fontSize: 13, color: C.ink2, marginTop: 4, fontVariant: ["tabular-nums"] },
+  focusBtn: { backgroundColor: C.amber, paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 18 },
+  focusBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
   sectionRule: { marginTop: 28, marginBottom: 8, borderTopColor: C.border, borderTopWidth: 1, paddingTop: 14 },
   sectionLabel: { fontSize: 10, letterSpacing: 2, color: C.ink3 },
 
