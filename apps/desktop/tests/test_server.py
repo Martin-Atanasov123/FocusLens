@@ -59,3 +59,37 @@ def test_remote_html_shell_is_public(client):
 def test_network_info_reports_no_tunnel_when_inactive(client):
     data = client.get("/api/network-info").get_json()
     assert data["tunnelUrl"] is None
+
+
+def test_android_payload_namespaces_per_device(tmp_path):
+    """Two phones POSTing the same app must not merge — each device id gets its
+    own source ("android:<id>") and its name is remembered."""
+    from agent.timeutil import today_local, local_day_bounds
+    store = Store(tmp_path / "t.db")
+    store.set_setting("pairing_token", TOKEN)
+    client = create_app(store, threading.Event(), port=48732, tunnel=None).test_client()
+    day = today_local()
+    start, _ = local_day_bounds(day)
+
+    def sync(device_id, name, secs):
+        return client.post(
+            "/events",
+            json={
+                "source": "android",
+                "deviceId": device_id,
+                "deviceName": name,
+                "records": [
+                    {"kind": "app", "key": "com.discord", "active_secs": secs, "bucket_ts": start}
+                ],
+            },
+            headers={"x-focuslens-token": TOKEN},
+        )
+
+    assert sync("AAA", "Xiaomi 14", 600).status_code == 200
+    assert sync("BBB", "Pixel 8", 400).status_code == 200
+
+    s = store.day_summary(day)
+    names = {p["name"]: p["activeSecs"] for p in s["phones"]}
+    assert names == {"Xiaomi 14": 600, "Pixel 8": 400}
+    assert s["phoneActiveSecs"] == 1000
+    assert store.get_setting("android_device:AAA") == "Xiaomi 14"

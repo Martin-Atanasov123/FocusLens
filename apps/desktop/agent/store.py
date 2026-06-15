@@ -318,15 +318,25 @@ class Store:
                    GROUP BY key HAVING active > 0 ORDER BY active DESC""",
                 (start, end),
             ).fetchall()
+            # Phone rows are namespaced per device as source = "android:<id>"
+            # (legacy data is plain "android"); group by source so two phones
+            # stay separate instead of merging.
             phone_apps = self._conn.execute(
-                """SELECT key, COALESCE(MAX(label), key) AS label,
-                          MAX(active_secs) AS active, 'android' AS source
+                """SELECT source, key, COALESCE(MAX(label), key) AS label,
+                          MAX(active_secs) AS active
                    FROM usage_minutes
-                   WHERE kind = 'app' AND source = 'android'
+                   WHERE kind = 'app' AND source LIKE 'android%'
                      AND bucket_ts >= ? AND bucket_ts < ?
-                   GROUP BY key HAVING active > 0 ORDER BY active DESC""",
+                   GROUP BY source, key HAVING active > 0
+                   ORDER BY active DESC""",
                 (start, end),
             ).fetchall()
+            device_names = {
+                r["key"][len("android_device:"):]: r["value"]
+                for r in self._conn.execute(
+                    "SELECT key, value FROM settings WHERE key LIKE 'android_device:%'"
+                ).fetchall()
+            }
 
         classify = self._rules_matcher()
         desktop_total = sum(r["active"] for r in apps)
@@ -348,13 +358,24 @@ class Store:
                 {"key": r["key"], "label": r["label"], "activeSecs": r["active"],
                  "source": r["source"], "category": cat, "weight": weight}
             )
+        # Group phone usage per device. phoneApps stays a flat combined list
+        # (back-compat); phones breaks it down by device for the per-phone view.
+        phones_map: dict[str, dict] = {}
         phone_rows = []
         for r in phone_apps:
+            src = r["source"]
+            dev_id = src.split(":", 1)[1] if ":" in src else ""
+            dev_name = device_names.get(dev_id) or "Phone"
             cat, weight = classify("app", r["key"], r["label"])
-            phone_rows.append(
-                {"key": r["key"], "label": r["label"], "activeSecs": r["active"],
-                 "source": "android", "category": cat, "weight": weight}
+            row = {"key": r["key"], "label": r["label"], "activeSecs": r["active"],
+                   "source": "android", "category": cat, "weight": weight}
+            dev = phones_map.setdefault(
+                src, {"deviceId": dev_id, "name": dev_name, "activeSecs": 0, "apps": []}
             )
+            dev["activeSecs"] += r["active"]
+            dev["apps"].append(row)
+            phone_rows.append(row)
+        phones = sorted(phones_map.values(), key=lambda d: d["activeSecs"], reverse=True)
 
         return {
             "date": date_str,
@@ -368,6 +389,7 @@ class Store:
             "apps": app_rows,
             "domains": dom_rows,
             "phoneApps": phone_rows,
+            "phones": phones,
         }
 
     # ---- trends -------------------------------------------------------------

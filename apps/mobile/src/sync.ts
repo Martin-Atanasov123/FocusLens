@@ -6,6 +6,8 @@
  * every sync, so repeated syncs never double-count.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Application from "expo-application";
+import * as Device from "expo-device";
 import * as IntentLauncher from "expo-intent-launcher";
 import {
   checkForPermission,
@@ -119,6 +121,28 @@ export async function openUsageAccessSettings(): Promise<void> {
   }
 }
 
+/** Stable per-device identity so two phones never merge into one total.
+ *  ANDROID_ID survives reinstalls (scoped to the app signing key + device),
+ *  so the same phone keeps the same id across re-pairing. Falls back to a
+ *  persisted random id if the platform value is unavailable. */
+export async function deviceInfo(): Promise<{ deviceId: string; deviceName: string }> {
+  let id = "";
+  try {
+    id = Application.getAndroidId() || "";
+  } catch {
+    /* platform id unavailable — fall back below */
+  }
+  if (!id) {
+    id = (await AsyncStorage.getItem("fl_device_id")) || "";
+    if (!id) {
+      id = "dev-" + Math.random().toString(36).slice(2, 12);
+      await AsyncStorage.setItem("fl_device_id", id);
+    }
+  }
+  const name = Device.deviceName || Device.modelName || "Phone";
+  return { deviceId: id, deviceName: String(name) };
+}
+
 /** Today's per-app foreground seconds, top 50. */
 export async function todayUsageSeconds(): Promise<
   { key: string; label: string; secs: number }[]
@@ -154,8 +178,11 @@ export async function syncNow(): Promise<boolean> {
   midnight.setHours(0, 0, 0, 0);
   const bucketTs = Math.floor(midnight.getTime() / 1000);
 
+  const { deviceId, deviceName } = await deviceInfo();
   const body = {
     source: "android",
+    deviceId,
+    deviceName,
     records: usage.map((u) => ({
       kind: "app",
       key: u.key,

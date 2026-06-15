@@ -234,10 +234,18 @@ def create_app(store, is_paused: threading.Event, port: int = 48732, tunnel=None
         from .engine import UsageRecord
 
         # ---- Android companion: snapshot of today's per-app totals ----------
-        # Payload: {source:"android", records:[{kind,key,active_secs,bucket_ts}]}
+        # Payload: {source:"android", deviceId, deviceName,
+        #           records:[{kind,key,active_secs,bucket_ts}]}
         # active_secs is a running daily total against a fixed (midnight) bucket,
         # so we REPLACE rather than accumulate to stay idempotent across syncs.
+        # Each phone gets its own source ("android:<deviceId>") so two devices
+        # are tracked separately instead of clobbering/merging each other.
         if payload.get("source") == "android":
+            device_id = (payload.get("deviceId") or "").strip()[:64]
+            device_name = (payload.get("deviceName") or "").strip()[:64]
+            android_source = f"android:{device_id}" if device_id else "android"
+            if device_id and device_name:
+                store.set_setting(f"android_device:{device_id}", device_name)
             arecords = []
             for ev in payload.get("records", []):
                 key = (ev.get("key") or "").strip()
@@ -261,7 +269,7 @@ def create_app(store, is_paused: threading.Event, port: int = 48732, tunnel=None
                         )
                     )
             if arecords:
-                store.replace_usage("android", "app", arecords)
+                store.replace_usage(android_source, "app", arecords)
                 check_and_fire(store)
             return jsonify(accepted=len(arecords))
 

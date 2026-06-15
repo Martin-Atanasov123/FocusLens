@@ -325,6 +325,13 @@ code.tok{
   text-align:center;padding:48px 20px;color:var(--ink-3);font-size:13px;line-height:1.6;
 }
 .phone-empty strong{display:block;font-size:15px;color:var(--ink-2);margin-bottom:8px}
+.phone-dev{margin-bottom:22px}
+.phone-dev-head{
+  display:flex;align-items:baseline;justify-content:space-between;
+  padding:0 2px 8px;margin-bottom:6px;border-bottom:1px solid var(--border);
+}
+.phone-dev-name{font-size:13px;font-weight:600;color:var(--ink-2)}
+.phone-dev-tot{font-family:'DM Mono',monospace;font-size:13px;color:var(--amber)}
 
 /* RESPONSIVE */
 @media(max-width:680px){
@@ -765,19 +772,51 @@ async function loadToday() {
 async function loadPhone() {
   try {
     const d = await (await fetch('/api/summary')).json();
-    const phone = d.phoneApps || [];
+    const phones = d.phones || [];
     document.getElementById('phone-num').textContent = fmt(d.phoneActiveSecs || 0);
     document.getElementById('phone-date').textContent = d.phoneActiveSecs > 0
       ? d.date : '';
-    if (!phone.length) {
-      document.getElementById('phone-list').innerHTML =
+    const el = document.getElementById('phone-list');
+    if (!phones.length) {
+      el.innerHTML =
         `<div class="phone-empty"><strong>No phone data yet</strong>Install the Android companion app, grant Usage Access permission, and sync once — your phone app usage will appear here.</div>`;
-    } else {
-      _renderList('phone-list', phone, false, '');
+      return;
     }
+    // One section per device so two phones never blur into one list.
+    el.innerHTML = phones.map(dev => {
+      const apps = dev.apps || [];
+      const mx = Math.max(...apps.map(x=>x.activeSecs), 1);
+      const rows = apps.slice(0,15).map((e,i)=>{
+        // Android sends the real app name as label (key is the package id).
+        const appName = (e.label && e.label !== e.key) ? e.label : cleanAppName(e.key);
+        const catColor = CAT_COLOR[e.category]||'var(--ink-3)';
+        return `<div class="u-row" style="animation-delay:${i*38}ms">
+          <div class="u-nm"><div class="u-app-name">
+            <span class="cat-dot" style="background:${catColor}"></span>
+            <span title="${e.key}">${appName}</span>
+          </div></div>
+          <div class="u-tr"><div class="u-bar" data-w="${(e.activeSecs/mx)*100}"></div></div>
+          <span class="u-tm">${fmt(e.activeSecs)}</span>
+        </div>`;
+      }).join('');
+      return `<div class="phone-dev">
+        <div class="phone-dev-head">
+          <span class="phone-dev-name">📱 ${esc(dev.name)}</span>
+          <span class="phone-dev-tot">${fmt(dev.activeSecs)}</span>
+        </div>
+        ${rows}
+      </div>`;
+    }).join('');
+    requestAnimationFrame(()=>
+      el.querySelectorAll('.u-bar').forEach(b=>setTimeout(()=>b.style.width=b.dataset.w+'%',80)));
   } catch {
     document.getElementById('phone-num').textContent = '—';
   }
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 }
 
 function _renderList(id, items, dom, empty) {

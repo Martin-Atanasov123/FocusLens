@@ -82,6 +82,70 @@ def test_day_summary_includes_score(store):
     assert cats == {"Code.exe": "Productive", "steam.exe": "Distracting"}
 
 
+# ---- phone devices ----------------------------------------------------------
+
+def test_phone_devices_tracked_separately(store):
+    from agent.timeutil import today_local, local_day_bounds
+    day = today_local()
+    start, _ = local_day_bounds(day)
+    store.set_setting("android_device:AAA", "Xiaomi 14")
+    store.set_setting("android_device:BBB", "Pixel 8")
+    store.replace_usage("android:AAA", "app", [
+        rec(start, "com.instagram.android", 1000),
+        rec(start, "com.brave.browser", 500),
+    ])
+    store.replace_usage("android:BBB", "app", [rec(start, "com.discord", 800)])
+
+    s = store.day_summary(day)
+    names = {p["name"]: p["activeSecs"] for p in s["phones"]}
+    assert names == {"Xiaomi 14": 1500, "Pixel 8": 800}
+    assert s["phoneActiveSecs"] == 2300
+
+    # re-syncing one phone REPLACES its snapshot — never double-counts
+    store.replace_usage("android:AAA", "app", [
+        rec(start, "com.instagram.android", 1200),
+        rec(start, "com.brave.browser", 500),
+    ])
+    s2 = store.day_summary(day)
+    names2 = {p["name"]: p["activeSecs"] for p in s2["phones"]}
+    assert names2 == {"Xiaomi 14": 1700, "Pixel 8": 800}
+    assert s2["phoneActiveSecs"] == 2500
+
+
+def test_all_sources_sums_desktop_and_phones(store):
+    from agent.timeutil import today_local, local_day_bounds
+    day = today_local()
+    start, _ = local_day_bounds(day)
+    store.upsert_usage("desktop", "app", [rec(start, "Code.exe", 600, "VS Code")])
+    store.replace_usage("android:AAA", "app", [rec(start, "com.discord", 400)])
+
+    s = store.day_summary(day)
+    assert s["totalActiveSecs"] == 600           # desktop only
+    assert s["phoneActiveSecs"] == 400           # phones only
+    assert s["allSourcesSecs"] == 1000           # combined
+
+
+# ---- goals (category totals) ------------------------------------------------
+
+def test_category_total_sums_across_desktop_and_extension(store):
+    from agent.timeutil import today_local, local_day_bounds
+    day = today_local()
+    start, _ = local_day_bounds(day)
+    store.upsert_usage("desktop", "app", [
+        rec(start, "Code.exe", 1200, "Visual Studio Code"),  # Productive
+        rec(start, "steam.exe", 600, "Steam"),               # Distracting
+    ])
+    store.upsert_usage("extension", "domain", [
+        rec(start, "github.com", 300),    # Productive
+        rec(start, "youtube.com", 900),   # Distracting
+    ])
+    end = start + 86400
+    assert store.category_total("Productive", start, end) == 1500   # 1200 + 300
+    assert store.category_total("Distracting", start, end) == 1500  # 600 + 900
+    # goal_used delegates to category_total for category targets
+    assert store.goal_used("category", "Productive", start, end) == 1500
+
+
 # ---- trends -----------------------------------------------------------------
 
 def test_daily_totals_shape_and_padding(store):
