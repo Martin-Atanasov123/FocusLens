@@ -25,10 +25,17 @@ _RUN_NAME = "FocusLens"
 
 
 def _autostart_target() -> str | None:
-    """Command to launch on login. Only meaningful for the packaged .exe;
-    autostart from a source checkout is skipped (fragile cwd/imports)."""
+    """Command to launch on login. Prefer the running frozen .exe; when started
+    from a source checkout, fall back to a built FocusLens.exe (dist/ or a
+    sibling) if one exists so autostart still works during local use. Running
+    the bare `python run.py` on login is too fragile (cwd/interpreter/deps), so
+    without an .exe we register nothing."""
     if getattr(sys, "frozen", False):
         return f'"{sys.executable}"'
+    here = Path(__file__).resolve().parent
+    for cand in (here / "dist" / "FocusLens.exe", here / "FocusLens.exe"):
+        if cand.exists():
+            return f'"{cand}"'
     return None
 
 
@@ -220,10 +227,11 @@ def main() -> None:
         store.set_setting("first_run_done", "1")
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
 
-    # Register the packaged exe to start with Windows so tracking is always on.
+    # Register FocusLens to start with Windows so tracking is always on. Targets
+    # the built .exe (see _autostart_target); a no-op when no .exe is found.
     # Tracked separately from first_run so existing installs get it once too;
     # the user can still turn it off via the "Start with Windows" tray toggle.
-    if getattr(sys, "frozen", False) and store.get_setting("autostart_init") is None:
+    if store.get_setting("autostart_init") is None and _autostart_target():
         store.set_setting("autostart_init", "1")
         set_autostart(True)
 
