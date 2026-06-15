@@ -11,7 +11,7 @@ import * as Device from "expo-device";
 import * as IntentLauncher from "expo-intent-launcher";
 import {
   checkForPermission,
-  queryAndAggregateUsageStats,
+  queryEvents,
   showUsageAccessSettings,
 } from "@brighthustle/react-native-usage-stats-manager";
 
@@ -143,20 +143,27 @@ export async function deviceInfo(): Promise<{ deviceId: string; deviceName: stri
   return { deviceId: id, deviceName: String(name) };
 }
 
-/** Today's per-app foreground seconds, top 50. */
+/** Today's per-app foreground seconds, top 50.
+ *
+ * Uses event-based sessions (queryEvents pairs FOREGROUND→BACKGROUND events,
+ * the same way Digital Wellbeing measures screen time). The earlier
+ * queryAndAggregateUsageStats over-reported ~2–3x because Android's
+ * getTotalTimeInForeground sums overlapping daily buckets and includes the
+ * pre-midnight portion of the bucket that straddles midnight. usageTime is in
+ * milliseconds; system apps are already filtered out natively. */
 export async function todayUsageSeconds(): Promise<
   { key: string; label: string; secs: number }[]
 > {
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
-  const stats = await queryAndAggregateUsageStats(midnight.getTime(), Date.now());
-  const rows = Object.values(stats ?? {}) as any[];
+  const events = await queryEvents(midnight.getTime(), Date.now());
+  const rows = Object.values(events ?? {}) as any[];
   return rows
     .filter((s) => !s.isSystem)
     .map((s) => ({
       key: String(s.packageName ?? ""),
-      label: String(s.appName || s.packageName || ""),
-      secs: Math.floor(Number(s.totalTimeInForeground ?? 0)),
+      label: String(s.name || s.packageName || ""),
+      secs: Math.floor(Number(s.usageTime ?? 0) / 1000), // ms → s
     }))
     .filter((r) => r.key && r.secs > 0)
     .sort((a, b) => b.secs - a.secs)
