@@ -1,0 +1,75 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    xmlns:tools="http://schemas.android.com/tools"
+4    package="expo.modules.focusblocker" >
+5
+6    <uses-sdk android:minSdkVersion="24" />
+7
+8    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+8-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:4:3-75
+8-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:4:20-73
+9    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+9-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:5:3-74
+9-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:5:20-72
+10    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+10-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:6:3-86
+10-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:6:20-84
+11    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+11-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:7:3-74
+11-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:7:20-72
+12    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+12-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:8:3-92
+12-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:8:20-90
+13
+14    <!--
+15       Android 11+ package visibility: lets getApplicationLabel() resolve labels for
+16       any installed app that UsageStatsManager reports events for. Without this,
+17       pm.getApplicationInfo() throws NameNotFoundException for ~95% of packages.
+18    -->
+19    <queries>
+19-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:13:3-17:13
+20        <intent>
+20-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:14:5-16:14
+21            <action android:name="android.intent.action.MAIN" />
+21-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:15:7-58
+21-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:15:15-56
+22        </intent>
+23    </queries>
+24
+25    <application>
+25-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:19:3-37:17
+26        <service
+26-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:20:5-27:15
+27            android:name="expo.modules.focusblocker.FocusBlockerService"
+27-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:21:9-44
+28            android:exported="false"
+28-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:22:9-33
+29            android:foregroundServiceType="specialUse" >
+29-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:23:9-51
+30            <property
+30-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:24:7-26:113
+31                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+31-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:25:11-70
+32                android:value="Blocks user-selected apps during the user&apos;s own focus sessions for digital wellbeing" />
+32-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:26:11-111
+33        </service>
+34
+35        <activity
+35-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:29:5-36:51
+36            android:name="expo.modules.focusblocker.BlockActivity"
+36-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:30:9-38
+37            android:excludeFromRecents="true"
+37-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:32:9-42
+38            android:exported="false"
+38-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:31:9-33
+39            android:launchMode="singleTask"
+39-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:33:9-40
+40            android:taskAffinity=""
+40-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:34:9-32
+41            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+41-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:35:9-68
+42            tools:ignore="LockedOrientationActivity" />
+42-->C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:36:9-49
+43    </application>
+44
+45</manifest>

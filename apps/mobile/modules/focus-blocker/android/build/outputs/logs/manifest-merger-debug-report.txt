@@ -1,0 +1,78 @@
+-- Merging decision tree log ---
+manifest
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:1:1-38:12
+INJECTED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:1:1-38:12
+	package
+		INJECTED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml
+	xmlns:tools
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:2:5-51
+	xmlns:android
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:1:11-69
+uses-permission#android.permission.SYSTEM_ALERT_WINDOW
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:4:3-75
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:4:20-73
+uses-permission#android.permission.FOREGROUND_SERVICE
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:5:3-74
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:5:20-72
+uses-permission#android.permission.FOREGROUND_SERVICE_SPECIAL_USE
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:6:3-86
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:6:20-84
+uses-permission#android.permission.POST_NOTIFICATIONS
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:7:3-74
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:7:20-72
+uses-permission#android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:8:3-92
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:8:20-90
+queries
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:13:3-17:13
+intent#action:name:android.intent.action.MAIN
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:14:5-16:14
+action#android.intent.action.MAIN
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:15:7-58
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:15:15-56
+application
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:19:3-37:17
+service#expo.modules.focusblocker.FocusBlockerService
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:20:5-27:15
+	android:exported
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:22:9-33
+	android:foregroundServiceType
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:23:9-51
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:21:9-44
+property#android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:24:7-26:113
+	android:value
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:26:11-111
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:25:11-70
+activity#expo.modules.focusblocker.BlockActivity
+ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:29:5-36:51
+	android:excludeFromRecents
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:32:9-42
+	android:launchMode
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:33:9-40
+	android:exported
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:31:9-33
+	tools:ignore
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:36:9-49
+	android:theme
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:35:9-68
+	android:taskAffinity
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:34:9-32
+	android:name
+		ADDED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml:30:9-38
+uses-sdk
+INJECTED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml
+INJECTED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from C:\Users\atana\Music\FocusLens\apps\mobile\modules\focus-blocker\android\src\main\AndroidManifest.xml
