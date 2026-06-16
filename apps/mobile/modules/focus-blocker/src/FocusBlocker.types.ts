@@ -10,4 +10,7 @@ export interface FocusBlockerNativeModule {
   startBlocking(packageNames: string[], untilEpochMs: number): void;
   /** Stop the current session immediately. */
   stopBlocking(): void;
+  /** Accurate per-app foreground seconds since `startEpochMs` (Digital-
+   *  Wellbeing-style event pairing). Only user-launchable apps. */
+  usageSince(startEpochMs: number): { packageName: string; appName: string; secs: number }[];
 }

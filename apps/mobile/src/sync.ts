@@ -11,9 +11,10 @@ import * as Device from "expo-device";
 import * as IntentLauncher from "expo-intent-launcher";
 import {
   checkForPermission,
-  queryEvents,
   showUsageAccessSettings,
 } from "@brighthustle/react-native-usage-stats-manager";
+
+import { usageSince } from "./blocking/FocusBlocker";
 
 export interface PairConfig {
   baseUrl: string;
@@ -145,26 +146,20 @@ export async function deviceInfo(): Promise<{ deviceId: string; deviceName: stri
 
 /** Today's per-app foreground seconds, top 50.
  *
- * Uses event-based sessions (queryEvents pairs FOREGROUND→BACKGROUND events,
- * the same way Digital Wellbeing measures screen time). The earlier
- * queryAndAggregateUsageStats over-reported ~2–3x because Android's
- * getTotalTimeInForeground sums overlapping daily buckets and includes the
- * pre-midnight portion of the bucket that straddles midnight. usageTime is in
- * milliseconds; system apps are already filtered out natively. */
+ * Computed by our own native module (FocusBlocker.usageSince), which pairs
+ * RESUMED→PAUSED/STOPPED events and caps the currently-open session at now —
+ * matching Digital Wellbeing. We do NOT use the bundled library's queryEvents
+ * (under-reports: drops the open/last session) or queryAndAggregateUsageStats
+ * (over-reports ~2–3x: sums overlapping daily buckets). The native side already
+ * returns only user-launchable apps with seconds. */
 export async function todayUsageSeconds(): Promise<
   { key: string; label: string; secs: number }[]
 > {
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
-  const events = await queryEvents(midnight.getTime(), Date.now());
-  const rows = Object.values(events ?? {}) as any[];
+  const rows = usageSince(midnight.getTime());
   return rows
-    .filter((s) => !s.isSystem)
-    .map((s) => ({
-      key: String(s.packageName ?? ""),
-      label: String(s.name || s.packageName || ""),
-      secs: Math.floor(Number(s.usageTime ?? 0) / 1000), // ms → s
-    }))
+    .map((r) => ({ key: r.packageName, label: r.appName || r.packageName, secs: r.secs }))
     .filter((r) => r.key && r.secs > 0)
     .sort((a, b) => b.secs - a.secs)
     .slice(0, 50);

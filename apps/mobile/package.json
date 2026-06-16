@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "build:apk": "eas build -p android --profile preview",
-    "build:dev": "eas build -p android --profile development"
+    "build:dev": "eas build -p android --profile development",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@brighthustle/react-native-usage-stats-manager": "^0.1.5",

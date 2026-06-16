@@ -7,6 +7,15 @@
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
 
+  <!-- Android 11+ package visibility: lets getApplicationLabel() resolve labels for
+       any installed app that UsageStatsManager reports events for. Without this,
+       pm.getApplicationInfo() throws NameNotFoundException for ~95% of packages. -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN"/>
+    </intent>
+  </queries>
+
   <application>
     <service
         android:name=".FocusBlockerService"

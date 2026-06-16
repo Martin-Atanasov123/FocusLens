@@ -49,3 +49,11 @@ export function stopFocusSession(): void {
     /* no-op */
   }
 }
+
+/** Accurate per-app foreground seconds since `startEpochMs` (event-paired,
+ *  Digital-Wellbeing-style). Throws if the native module is unavailable. */
+export function usageSince(
+  startEpochMs: number
+): { packageName: string; appName: string; secs: number }[] {
+  return FocusBlockerModule.usageSince(startEpochMs);
+}
