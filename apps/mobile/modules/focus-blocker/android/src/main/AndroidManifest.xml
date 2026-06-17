@@ -6,6 +6,8 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+  <!-- Required for BootReceiver to restart limits after device reboot -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
   <!-- Android 11+ package visibility: lets getApplicationLabel() resolve labels for
        any installed app that UsageStatsManager reports events for. Without this,
@@ -23,7 +25,7 @@
         android:foregroundServiceType="specialUse">
       <property
           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-          android:value="Blocks user-selected apps during the user's own focus sessions for digital wellbeing"/>
+          android:value="Monitors and enforces user-configured daily screen-time limits and focus sessions for digital wellbeing"/>
     </service>
 
     <activity
@@ -34,5 +36,15 @@
         android:taskAffinity=""
         android:theme="@android:style/Theme.Translucent.NoTitleBar"
         tools:ignore="LockedOrientationActivity"/>
+
+    <receiver
+        android:name=".BootReceiver"
+        android:enabled="true"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
+    </receiver>
   </application>
 </manifest>

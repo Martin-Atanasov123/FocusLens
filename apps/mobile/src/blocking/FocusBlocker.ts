@@ -57,3 +57,39 @@ export function usageSince(
 ): { packageName: string; appName: string; secs: number }[] {
   return FocusBlockerModule.usageSince(startEpochMs);
 }
+
+// ---- Daily limits ----------------------------------------------------------
+
+export interface AppLimitInfo {
+  packageName: string;
+  dailyLimitSecs: number;
+  usedSecs: number;
+  jokerUsedToday: boolean;
+}
+
+/** Set (or update) a daily limit for a package. Starts the service if needed. */
+export function setLimit(packageName: string, dailyLimitSecs: number): void {
+  try {
+    FocusBlockerModule.setLimit(packageName, dailyLimitSecs);
+  } catch {
+    /* no-op on web/simulator */
+  }
+}
+
+/** Remove a daily limit. Stops the service if no limits remain. */
+export function removeLimit(packageName: string): void {
+  try {
+    FocusBlockerModule.removeLimit(packageName);
+  } catch {
+    /* no-op */
+  }
+}
+
+/** Returns all configured limits with today's usage from native SharedPreferences. */
+export function getLimits(): AppLimitInfo[] {
+  try {
+    return FocusBlockerModule.getLimits() as AppLimitInfo[];
+  } catch {
+    return [];
+  }
+}

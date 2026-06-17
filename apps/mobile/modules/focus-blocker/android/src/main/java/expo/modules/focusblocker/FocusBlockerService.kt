@@ -8,152 +8,268 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 
 /**
- * Foreground service that polls the current foreground app (~1 Hz via
- * UsageStats — the permission the app already requests) and, while a focus
- * session is active, throws up [BlockActivity] whenever a blocked app comes to
- * the front. Stops itself when the session's end time passes.
+ * Foreground service that enforces two independent blocking systems:
  *
- * This is intentionally a friction speed-bump, not DRM: a determined user can
- * leave, which is the right model for a wellbeing tool and keeps us clear of
- * AccessibilityService (Play Store risk).
+ *  1. Focus Session — blocks a user-chosen set of apps until a fixed deadline.
+ *     Launched by JS via ACTION_START with packages + until extras.
+ *
+ *  2. Daily Limits — blocks any app that has exceeded its daily limit (set in
+ *     LimitStore). Checked every 30 seconds. Launched on boot via BootReceiver
+ *     and on first limit creation via ACTION_START_LIMITS_ONLY.
+ *
+ * The service keeps running as long as a session is active OR any limit is
+ * configured. It stops itself only when both conditions are false, or when
+ * ACTION_STOP_ALL is received.
  */
 class FocusBlockerService : Service() {
-  companion object {
-    const val ACTION_START = "expo.modules.focusblocker.START"
-    const val ACTION_STOP = "expo.modules.focusblocker.STOP"
-    const val EXTRA_PACKAGES = "packages"
-    const val EXTRA_UNTIL = "until"
 
-    private const val CHANNEL_ID = "focuslens_blocker"
-    private const val NOTIF_ID = 4873
-    private const val TICK_MS = 1000L
-    private const val RESHOW_GRACE_MS = 1500L
+    companion object {
+        const val ACTION_START            = "expo.modules.focusblocker.START"
+        const val ACTION_STOP             = "expo.modules.focusblocker.STOP"
+        const val ACTION_START_LIMITS_ONLY = "expo.modules.focusblocker.START_LIMITS_ONLY"
+        const val ACTION_STOP_ALL         = "expo.modules.focusblocker.STOP_ALL"
 
-    @Volatile
-    var isRunning = false
-      private set
-  }
+        const val EXTRA_PACKAGES = "packages"
+        const val EXTRA_UNTIL    = "until"
 
-  private val handler = Handler(Looper.getMainLooper())
-  private var blocked: Set<String> = emptySet()
-  private var until: Long = 0L
-  private var lastCheck: Long = 0L
-  private var currentForeground: String? = null
-  private var lastBlockShownAt: Long = 0L
+        private const val CHANNEL_ID       = "focuslens_blocker"
+        private const val NOTIF_ID         = 4873
+        private const val TICK_MS          = 1_000L
+        private const val RESHOW_GRACE_MS  = 1_500L
+        private const val LIMIT_CHECK_EVERY = 30  // ticks (= 30 s)
 
-  private val ticker = object : Runnable {
-    override fun run() {
-      tick()
-      if (isRunning) handler.postDelayed(this, TICK_MS)
+        @Volatile var isRunning = false
+            private set
     }
-  }
 
-  override fun onBind(intent: Intent?): IBinder? = null
+    private val handler = Handler(Looper.getMainLooper())
 
-  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    when (intent?.action) {
-      ACTION_STOP -> {
-        stopBlocking()
-        return START_NOT_STICKY
-      }
-      ACTION_START -> {
-        blocked = (intent.getStringArrayListExtra(EXTRA_PACKAGES) ?: arrayListOf()).toSet()
-        until = intent.getLongExtra(EXTRA_UNTIL, 0L)
-        // Seed the lookback so an app that is ALREADY open when the session
-        // starts is caught on the first tick.
-        lastCheck = System.currentTimeMillis() - 60_000L
-        startForeground(NOTIF_ID, buildNotification())
-        isRunning = true
+    // Focus-session state
+    private var blocked: Set<String> = emptySet()
+    private var until: Long = 0L
+
+    // Shared foreground-detection state
+    private var lastCheck: Long = 0L
+    private var currentForeground: String? = null
+    private var lastBlockShownAt: Long = 0L
+
+    // Limit-check cadence
+    private var limitTick = 0
+
+    private val ticker = object : Runnable {
+        override fun run() {
+            tick()
+            if (isRunning) handler.postDelayed(this, TICK_MS)
+        }
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_STOP -> {
+                blocked = emptySet()
+                until   = 0L
+                updateNotification()
+                if (!shouldKeepRunning()) stopService()
+                return START_NOT_STICKY
+            }
+            ACTION_STOP_ALL -> {
+                stopService()
+                return START_NOT_STICKY
+            }
+            ACTION_START_LIMITS_ONLY -> {
+                ensureRunning()
+            }
+            ACTION_START -> {
+                blocked = (intent.getStringArrayListExtra(EXTRA_PACKAGES) ?: arrayListOf()).toSet()
+                until   = intent.getLongExtra(EXTRA_UNTIL, 0L)
+                lastCheck = System.currentTimeMillis() - 60_000L
+                ensureRunning()
+            }
+        }
+        return START_STICKY
+    }
+
+    private fun ensureRunning() {
+        if (!isRunning) {
+            startForeground(NOTIF_ID, buildNotification())
+            isRunning = true
+            handler.removeCallbacks(ticker)
+            handler.post(ticker)
+        } else {
+            updateNotification()
+        }
+    }
+
+    // ---- Main tick ---------------------------------------------------------
+
+    private fun tick() {
+        val now = System.currentTimeMillis()
+
+        // Clear expired focus session
+        if (until in 1..now) {
+            blocked = emptySet()
+            until   = 0L
+            updateNotification()
+        }
+
+        if (!shouldKeepRunning()) {
+            stopService()
+            return
+        }
+
+        updateForeground(now)
+        val pkg = currentForeground ?: return
+        if (pkg == packageName) return
+
+        // 1. Focus session check (every tick)
+        if (blocked.contains(pkg) && until > now && now - lastBlockShownAt > RESHOW_GRACE_MS) {
+            lastBlockShownAt = now
+            showFocusBlock(pkg)
+            return
+        }
+
+        // 2. Limit check (every LIMIT_CHECK_EVERY ticks)
+        limitTick++
+        if (limitTick >= LIMIT_CHECK_EVERY) {
+            limitTick = 0
+            checkLimit(pkg, now)
+        }
+    }
+
+    private fun checkLimit(pkg: String, now: Long) {
+        val limitStore = LimitStore(this)
+        val limit = limitStore.getLimit(pkg) ?: return
+
+        if (limitStore.isJokerActiveNow(pkg)) return  // joker window still open
+
+        val usageMs  = UsageHelper.usageSinceMs(this, UsageHelper.midnightMs())[pkg] ?: 0L
+        val usedSecs = (usageMs / 1000).toInt()
+        if (usedSecs < limit.dailyLimitSecs) return
+
+        if (now - lastBlockShownAt > RESHOW_GRACE_MS) {
+            lastBlockShownAt = now
+            val label = appLabel(pkg)
+            showLimitBlock(pkg, label, usedSecs, limit.dailyLimitSecs)
+        }
+    }
+
+    // ---- Foreground detection ----------------------------------------------
+
+    private fun updateForeground(now: Long) {
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
+        val fgType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+            UsageEvents.Event.ACTIVITY_RESUMED
+        else
+            UsageEvents.Event.MOVE_TO_FOREGROUND
+        val events = usm.queryEvents(lastCheck, now)
+        val event  = UsageEvents.Event()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == fgType) currentForeground = event.packageName
+        }
+        lastCheck = now
+    }
+
+    // ---- Show overlays -----------------------------------------------------
+
+    private fun showFocusBlock(pkg: String) {
+        val intent = Intent(this, BlockActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            putExtra(BlockActivity.EXTRA_PACKAGE, pkg)
+            putExtra(BlockActivity.EXTRA_UNTIL,   until)
+            putExtra(BlockActivity.EXTRA_MODE,    BlockActivity.MODE_FOCUS_SESSION)
+        }
+        startActivity(intent)
+    }
+
+    private fun showLimitBlock(pkg: String, label: String, usedSecs: Int, limitSecs: Int) {
+        val intent = Intent(this, BlockActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            putExtra(BlockActivity.EXTRA_PACKAGE,    pkg)
+            putExtra(BlockActivity.EXTRA_MODE,       BlockActivity.MODE_LIMIT_EXCEEDED)
+            putExtra(BlockActivity.EXTRA_APP_LABEL,  label)
+            putExtra(BlockActivity.EXTRA_USED_SECS,  usedSecs)
+            putExtra(BlockActivity.EXTRA_LIMIT_SECS, limitSecs)
+        }
+        startActivity(intent)
+    }
+
+    // ---- Lifecycle ---------------------------------------------------------
+
+    private fun shouldKeepRunning(): Boolean {
+        val sessionActive = blocked.isNotEmpty() && until > System.currentTimeMillis()
+        val hasLimits     = LimitStore(this).getAllLimits().isNotEmpty()
+        return sessionActive || hasLimits
+    }
+
+    private fun stopService() {
+        isRunning = false
         handler.removeCallbacks(ticker)
-        handler.post(ticker)
-      }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        stopSelf()
     }
-    return START_STICKY
-  }
 
-  private fun tick() {
-    val now = System.currentTimeMillis()
-    if (until in 1..now) {
-      stopBlocking()
-      return
+    override fun onDestroy() {
+        isRunning = false
+        handler.removeCallbacks(ticker)
+        super.onDestroy()
     }
-    updateForeground(now)
-    val pkg = currentForeground ?: return
-    if (pkg == packageName) return // never block ourselves / our own block screen
-    if (blocked.contains(pkg) && now - lastBlockShownAt > RESHOW_GRACE_MS) {
-      lastBlockShownAt = now
-      showBlock(pkg)
-    }
-  }
 
-  private fun updateForeground(now: Long) {
-    val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
-    val foregroundType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
-      UsageEvents.Event.ACTIVITY_RESUMED else UsageEvents.Event.MOVE_TO_FOREGROUND
-    val events = usm.queryEvents(lastCheck, now)
-    val event = UsageEvents.Event()
-    while (events.hasNextEvent()) {
-      events.getNextEvent(event)
-      if (event.eventType == foregroundType) {
-        currentForeground = event.packageName
-      }
-    }
-    lastCheck = now
-  }
+    // ---- Notification ------------------------------------------------------
 
-  private fun showBlock(pkg: String) {
-    val intent = Intent(this, BlockActivity::class.java).apply {
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-      putExtra(BlockActivity.EXTRA_PACKAGE, pkg)
-      putExtra(BlockActivity.EXTRA_UNTIL, until)
+    private fun buildNotification(): Notification {
+        ensureChannel()
+        val sessionActive = blocked.isNotEmpty() && until > System.currentTimeMillis()
+        val title   = if (sessionActive) "Focus session active" else "Screen time monitoring active"
+        val content = if (sessionActive) "Blocked apps are paused until your session ends."
+                      else               "FocusLens is enforcing your daily app limits."
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            Notification.Builder(this, CHANNEL_ID)
+        else
+            @Suppress("DEPRECATION") Notification.Builder(this)
+        return builder
+            .setContentTitle(title)
+            .setContentText(content)
+            .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
+            .setOngoing(true)
+            .build()
     }
-    startActivity(intent)
-  }
 
-  private fun stopBlocking() {
-    isRunning = false
-    handler.removeCallbacks(ticker)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-      stopForeground(STOP_FOREGROUND_REMOVE)
-    } else {
-      @Suppress("DEPRECATION")
-      stopForeground(true)
+    private fun updateNotification() {
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(NOTIF_ID, buildNotification())
     }
-    stopSelf()
-  }
 
-  override fun onDestroy() {
-    isRunning = false
-    handler.removeCallbacks(ticker)
-    super.onDestroy()
-  }
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, "Focus & Limits",
+                        NotificationManager.IMPORTANCE_LOW)
+                )
+            }
+        }
+    }
 
-  private fun buildNotification(): Notification {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-        nm.createNotificationChannel(
-          NotificationChannel(CHANNEL_ID, "Focus session", NotificationManager.IMPORTANCE_LOW)
-        )
-      }
-    }
-    val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      Notification.Builder(this, CHANNEL_ID)
-    } else {
-      @Suppress("DEPRECATION")
-      Notification.Builder(this)
-    }
-    return builder
-      .setContentTitle("Focus session active")
-      .setContentText("Blocked apps are paused until your session ends.")
-      .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
-      .setOngoing(true)
-      .build()
-  }
+    // ---- Helpers -----------------------------------------------------------
+
+    private fun appLabel(pkg: String): String = try {
+        val info = packageManager.getApplicationInfo(pkg, 0)
+        packageManager.getApplicationLabel(info).toString()
+    } catch (e: PackageManager.NameNotFoundException) { pkg }
 }
