@@ -99,6 +99,10 @@ class FocusBlockerModule : Module() {
             }
         }
 
+        // ---- Paywall: blocking-event counter -------------------------------
+
+        Function("getBlockEventCount") { BlockStats.count(context) }
+
         // ---- Usage stats ---------------------------------------------------
 
         // Accurate per-app foreground seconds since startMs, event-paired to

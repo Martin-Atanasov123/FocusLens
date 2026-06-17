@@ -22,6 +22,8 @@ export interface FocusBlockerNativeModule {
   removeLimit(packageName: string): void;
   /** Returns all configured limits with today's usage. */
   getLimits(): AppLimitInfo[];
+  /** Lifetime count of distinct blocking events (drives the paywall). */
+  getBlockEventCount(): number;
   /** Accurate per-app foreground seconds since `startEpochMs`. */
   usageSince(startEpochMs: number): { packageName: string; appName: string; secs: number }[];
 }

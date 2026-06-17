@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 
 /**
  * Foreground service that enforces two independent blocking systems:
@@ -44,6 +45,9 @@ class FocusBlockerService : Service() {
         private const val TICK_MS          = 1_000L
         private const val RESHOW_GRACE_MS  = 1_500L
         private const val LIMIT_CHECK_EVERY = 30  // ticks (= 30 s)
+        // A block counts as a *new* event (not a re-show) once the user has been
+        // away from the blocked app for at least this long, or switches apps.
+        private const val NEW_EVENT_GAP_MS = 10_000L
 
         @Volatile var isRunning = false
             private set
@@ -59,6 +63,7 @@ class FocusBlockerService : Service() {
     private var lastCheck: Long = 0L
     private var currentForeground: String? = null
     private var lastBlockShownAt: Long = 0L
+    private var lastBlockedPkg: String? = null
 
     // Limit-check cadence
     private var limitTick = 0
@@ -132,6 +137,7 @@ class FocusBlockerService : Service() {
 
         // 1. Focus session check (every tick)
         if (blocked.contains(pkg) && until > now && now - lastBlockShownAt > RESHOW_GRACE_MS) {
+            registerBlockEvent(pkg, now)
             lastBlockShownAt = now
             showFocusBlock(pkg)
             return
@@ -146,19 +152,29 @@ class FocusBlockerService : Service() {
     }
 
     private fun checkLimit(pkg: String, now: Long) {
-        val limitStore = LimitStore(this)
-        val limit = limitStore.getLimit(pkg) ?: return
+        // Hold a brief WakeLock so the UsageStats query and Activity launch succeed
+        // even when the screen is off. Auto-released after 5 s as a safety net.
+        val wl = (getSystemService(POWER_SERVICE) as? PowerManager)
+            ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "focuslens:check")
+            ?.also { it.acquire(5_000L) }
+        try {
+            val limitStore = LimitStore(this)
+            val limit = limitStore.getLimit(pkg) ?: return
 
-        if (limitStore.isJokerActiveNow(pkg)) return  // joker window still open
+            if (limitStore.isJokerActiveNow(pkg)) return  // joker window still open
 
-        val usageMs  = UsageHelper.usageSinceMs(this, UsageHelper.midnightMs())[pkg] ?: 0L
-        val usedSecs = (usageMs / 1000).toInt()
-        if (usedSecs < limit.dailyLimitSecs) return
+            val usageMs  = UsageHelper.usageSinceMs(this, UsageHelper.midnightMs())[pkg] ?: 0L
+            val usedSecs = (usageMs / 1000).toInt()
+            if (usedSecs < limit.dailyLimitSecs) return
 
-        if (now - lastBlockShownAt > RESHOW_GRACE_MS) {
-            lastBlockShownAt = now
-            val label = appLabel(pkg)
-            showLimitBlock(pkg, label, usedSecs, limit.dailyLimitSecs)
+            if (now - lastBlockShownAt > RESHOW_GRACE_MS) {
+                registerBlockEvent(pkg, now)
+                lastBlockShownAt = now
+                val label = appLabel(pkg)
+                showLimitBlock(pkg, label, usedSecs, limit.dailyLimitSecs)
+            }
+        } finally {
+            wl?.let { if (it.isHeld) it.release() }
         }
     }
 
@@ -177,6 +193,20 @@ class FocusBlockerService : Service() {
             if (event.eventType == fgType) currentForeground = event.packageName
         }
         lastCheck = now
+    }
+
+    // ---- Block-event counting ----------------------------------------------
+
+    /**
+     * Counts a blocking event for the paywall, de-duping re-shows. Must be
+     * called *before* lastBlockShownAt is updated, so the gap reflects the
+     * previous show. A new event = different app than last time, or the user
+     * returned after being away for NEW_EVENT_GAP_MS.
+     */
+    private fun registerBlockEvent(pkg: String, now: Long) {
+        val isNewEvent = pkg != lastBlockedPkg || now - lastBlockShownAt > NEW_EVENT_GAP_MS
+        if (isNewEvent) BlockStats.increment(this)
+        lastBlockedPkg = pkg
     }
 
     // ---- Show overlays -----------------------------------------------------

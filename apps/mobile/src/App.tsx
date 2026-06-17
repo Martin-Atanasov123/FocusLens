@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
   Linking as RNLinking,
   Modal,
@@ -15,7 +16,18 @@ import * as Linking from "expo-linking";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { WebView } from "react-native-webview";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { initSentry } from "./observability";
+initSentry(); // no-op until a real DSN is set in observability.ts
+
 import FocusScreen from "./screens/FocusScreen";
+import LimitsScreen from "./screens/LimitsScreen";
+import OnboardingScreen from "./screens/OnboardingScreen";
+import PaywallScreen from "./screens/PaywallScreen";
+import { getBlockEventCount } from "./blocking/FocusBlocker";
+import { useEntitlements } from "./paywall/useEntitlements";
+import { FREE_BLOCK_EVENT_LIMIT } from "./paywall/config";
 
 import {
   PairConfig,
@@ -82,9 +94,14 @@ export default function App() {
   const [manualUrl, setManualUrl] = useState("");
   const [manualToken, setManualToken] = useState("");
   const [loading, setLoading] = useState(true);
+  const [onboarded, setOnboarded] = useState(false);
   const [showDesktop, setShowDesktop] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [limitsOpen, setLimitsOpen] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false);
+
+  const { isPro, refresh: refreshEntitlements } = useEntitlements();
 
   // QR scanner
   const [scanning, setScanning] = useState(false);
@@ -108,11 +125,21 @@ export default function App() {
     }
   }, []);
 
+  const completeOnboarding = useCallback(async () => {
+    await AsyncStorage.setItem("fl_onboarded", "1");
+    setOnboarded(true);
+    await refresh();
+  }, [refresh]);
+
   // Initial load + deep link wiring
   useEffect(() => {
     (async () => {
-      const saved = await loadConfig();
+      const [saved, onboardedFlag] = await Promise.all([
+        loadConfig(),
+        AsyncStorage.getItem("fl_onboarded"),
+      ]);
       if (saved) setCfg(saved);
+      setOnboarded(!!onboardedFlag);
       const initial = await RNLinking.getInitialURL();
       if (initial) {
         const pc = parsePairUrl(initial);
@@ -147,6 +174,29 @@ export default function App() {
     }, 30000);
     return () => clearInterval(id);
   }, [permission]);
+
+  // "Aha moment" paywall: once a free user has been blocked enough times, show
+  // the paywall the next time they open the app. Fires at most once (persisted),
+  // so it never nags — further upgrades come from feature gates (e.g. 2nd limit).
+  useEffect(() => {
+    if (isPro || !onboarded || !permission) return;
+    let cancelled = false;
+    const maybeShow = async () => {
+      if (cancelled || (await AsyncStorage.getItem("fl_paywall_seen"))) return;
+      if (getBlockEventCount() >= FREE_BLOCK_EVENT_LIMIT) {
+        await AsyncStorage.setItem("fl_paywall_seen", "1");
+        if (!cancelled) setPaywallOpen(true);
+      }
+    };
+    maybeShow();
+    const sub = AppState.addEventListener("change", (st) => {
+      if (st === "active") maybeShow();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [isPro, onboarded, permission]);
 
   // Connection heartbeat: resolve a reachable URL (LAN → tunnel) every 5s.
   useEffect(() => {
@@ -225,6 +275,11 @@ export default function App() {
     );
   }
 
+  // ---- Onboarding gate: show 3-step flow on first launch -----------------
+  if (!onboarded) {
+    return <OnboardingScreen onComplete={completeOnboarding} />;
+  }
+
   // ---- Permission gate: nothing works without usage access ----------------
   if (!permission) {
     return (
@@ -294,9 +349,14 @@ export default function App() {
       <Text style={s.heroNum}>{fmt(totalSecs)}</Text>
       <Text style={s.heroDate}>{todayStr()}</Text>
 
-      <Pressable style={s.focusBtn} onPress={() => setFocusOpen(true)}>
-        <Text style={s.focusBtnText}>Start a focus session</Text>
-      </Pressable>
+      <View style={s.actionRow}>
+        <Pressable style={[s.focusBtn, s.actionHalf]} onPress={() => setFocusOpen(true)}>
+          <Text style={s.focusBtnText}>Focus session</Text>
+        </Pressable>
+        <Pressable style={[s.limitsBtn, s.actionHalf]} onPress={() => setLimitsOpen(true)}>
+          <Text style={s.limitsBtnText}>Daily limits</Text>
+        </Pressable>
+      </View>
 
       <View style={s.sectionRule}>
         <Text style={s.sectionLabel}>APPS</Text>
@@ -457,8 +517,18 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* QR scanner modal */}
       <FocusScreen visible={focusOpen} onClose={() => setFocusOpen(false)} />
+      <LimitsScreen
+        visible={limitsOpen}
+        onClose={() => setLimitsOpen(false)}
+        isPro={isPro}
+        onRequestUpgrade={() => setTimeout(() => setPaywallOpen(true), 250)}
+      />
+      <PaywallScreen
+        visible={paywallOpen}
+        onClose={() => setPaywallOpen(false)}
+        onPurchased={refreshEntitlements}
+      />
 
       <Modal visible={scanning} animationType="slide" onRequestClose={() => setScanning(false)}>
         <View style={s.scanRoot}>
@@ -490,8 +560,12 @@ const s = StyleSheet.create({
   heroEye: { fontSize: 10, letterSpacing: 2, color: C.ink3, marginBottom: 6 },
   heroNum: { fontSize: 64, fontWeight: "200", color: C.ink, letterSpacing: -2, lineHeight: 68 },
   heroDate: { fontSize: 13, color: C.ink2, marginTop: 4, fontVariant: ["tabular-nums"] },
-  focusBtn: { backgroundColor: C.amber, paddingVertical: 14, borderRadius: 12, alignItems: "center", marginTop: 18 },
-  focusBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 18 },
+  actionHalf: { flex: 1 },
+  focusBtn: { backgroundColor: C.amber, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+  focusBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  limitsBtn: { backgroundColor: C.surf, paddingVertical: 14, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: C.border },
+  limitsBtnText: { color: C.ink, fontSize: 14, fontWeight: "600" },
   sectionRule: { marginTop: 28, marginBottom: 8, borderTopColor: C.border, borderTopWidth: 1, paddingTop: 14 },
   sectionLabel: { fontSize: 10, letterSpacing: 2, color: C.ink3 },
 

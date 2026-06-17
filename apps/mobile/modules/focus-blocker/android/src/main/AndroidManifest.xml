@@ -6,6 +6,9 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+  <!-- Brief PARTIAL_WAKE_LOCK held during limit checks so the CPU doesn't
+       sleep between the UsageStats query and the BlockActivity launch. -->
+  <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <!-- Required for BootReceiver to restart limits after device reboot -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
@@ -43,6 +46,8 @@
         android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <!-- Restart service after an OTA update so limits survive Play Store updates -->
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
     </receiver>

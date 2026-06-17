@@ -93,3 +93,12 @@ export function getLimits(): AppLimitInfo[] {
     return [];
   }
 }
+
+/** Lifetime count of distinct blocking events. Drives the "aha moment" paywall. */
+export function getBlockEventCount(): number {
+  try {
+    return FocusBlockerModule.getBlockEventCount();
+  } catch {
+    return 0;
+  }
+}

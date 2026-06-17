@@ -5,6 +5,8 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -16,8 +18,10 @@ import android.widget.TextView
  * Full-screen overlay shown over a blocked app. Supports two modes:
  *
  *  FOCUS_SESSION — "Stay focused" screen, single "Back to focus" button.
- *  LIMIT_EXCEEDED — Shows today's usage vs limit, offers a once-per-day
- *                   5-minute joker, then hard-blocks after it expires.
+ *  LIMIT_EXCEEDED — Shows today's usage as a hero number vs the daily limit,
+ *                   offers a once-per-day 5-minute joker (gated by a short
+ *                   mindful countdown so it isn't a reflex tap), then
+ *                   hard-blocks once the joker is spent.
  */
 class BlockActivity : Activity() {
 
@@ -31,7 +35,13 @@ class BlockActivity : Activity() {
 
         const val MODE_FOCUS_SESSION  = "focus_session"
         const val MODE_LIMIT_EXCEEDED = "limit_exceeded"
+
+        /** Seconds the user must pause before the "extra minutes" button arms. */
+        private const val JOKER_GATE_SECONDS = 3
     }
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var ticker: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,6 +61,11 @@ class BlockActivity : Activity() {
         setContentView(root)
     }
 
+    override fun onDestroy() {
+        ticker?.let { handler.removeCallbacks(it) }
+        super.onDestroy()
+    }
+
     // ---- Focus session view ------------------------------------------------
 
     private fun buildFocusSessionView(root: LinearLayout) {
@@ -67,45 +82,82 @@ class BlockActivity : Activity() {
         val usedSecs  = intent.getIntExtra(EXTRA_USED_SECS, 0)
         val limitSecs = intent.getIntExtra(EXTRA_LIMIT_SECS, 0)
 
-        val limitStore   = LimitStore(this)
-        val jokerUsed    = limitStore.isJokerUsedToday(pkg)
-        val jokerActive  = limitStore.isJokerActiveNow(pkg)
+        val limitStore  = LimitStore(this)
+        val jokerUsed   = limitStore.isJokerUsedToday(pkg)
+        val jokerActive = limitStore.isJokerActiveNow(pkg)
 
-        root.addView(label("Time's up", 28f, "#1C1610", bold = true))
-        root.addView(label(appLabel, 18f, "#B26A0A", topPad = 8))
-
-        val usedMin  = (usedSecs  + 59) / 60
+        val usedMin  = (usedSecs + 59) / 60
         val limitMin = limitSecs / 60
-        root.addView(body("You've used this app for $usedMin min today (limit: $limitMin min).",
-            topPad = 16, botPad = 32))
+
+        // Eyebrow + hero usage number
+        root.addView(eyebrow("TIME'S UP"))
+        root.addView(label("$usedMin min", 60f, "#1C1610", bold = true, topPad = 8))
+        root.addView(label("on $appLabel today", 16f, "#6B6256", topPad = 4))
+        root.addView(body("Daily limit: $limitMin min", topPad = 6, botPad = 32))
 
         when {
             jokerActive -> {
-                // Joker is ticking — just let them back in, overlay will reappear when it expires
-                root.addView(body("Extra time is running — you have ${jokerMinutesLeft(pkg)} min left.",
-                    topPad = 0, botPad = 24))
+                // Joker window is open — show a live countdown, then let them in.
+                val cd = body("", topPad = 0, botPad = 24)
+                root.addView(cd)
                 root.addView(primaryBtn("Got it") { finish() })
+                startJokerCountdown(pkg, cd)
             }
             !jokerUsed -> {
-                root.addView(primaryBtn("Use 5 extra minutes (once today)") {
+                // Offer the once-a-day joker, but make them pause first.
+                val jokerBtn = primaryBtn("Use 5 more minutes") {
                     limitStore.activateJoker(pkg)
                     finish()
-                })
-                root.addView(ghostBtn("I'm done") { goHome() })
+                }
+                root.addView(jokerBtn)
+                root.addView(ghostBtn("I'm done for today") { goHome() })
+                startJokerGate(jokerBtn, "Use 5 more minutes")
             }
             else -> {
-                // Joker expired — hard block
-                root.addView(body("You already used your extra time today.", topPad = 0, botPad = 24))
-                root.addView(primaryBtn("I'm done") { goHome() })
+                // Joker spent — hard block for the rest of the day.
+                root.addView(body("You've already used your extra 5 minutes today.",
+                    topPad = 0, botPad = 24))
+                root.addView(primaryBtn("I'm done for today") { goHome() })
             }
         }
     }
 
-    private fun jokerMinutesLeft(pkg: String): Int {
+    /** Disable the joker button for a few seconds with a "breathe" countdown. */
+    private fun startJokerGate(button: Button, readyText: String) {
+        button.isEnabled = false
+        button.alpha = 0.45f
+        val r = object : Runnable {
+            var remaining = JOKER_GATE_SECONDS
+            override fun run() {
+                if (remaining > 0) {
+                    button.text = "Take a breath… $remaining"
+                    remaining--
+                    handler.postDelayed(this, 1000)
+                } else {
+                    button.text = readyText
+                    button.isEnabled = true
+                    button.alpha = 1f
+                }
+            }
+        }
+        ticker = r
+        handler.post(r)
+    }
+
+    /** Live MM:SS countdown of the remaining joker time; closes at zero. */
+    private fun startJokerCountdown(pkg: String, view: TextView) {
         val end = getSharedPreferences(LimitStore.PREFS, MODE_PRIVATE)
             .getLong("joker_end_$pkg", 0L)
-        val remaining = (end - System.currentTimeMillis()).coerceAtLeast(0L)
-        return ((remaining / 1000 + 59) / 60).toInt()
+        val r = object : Runnable {
+            override fun run() {
+                val remSec = ((end - System.currentTimeMillis()) / 1000).coerceAtLeast(0L)
+                if (remSec <= 0L) { goHome(); return }
+                view.text = "Extra time: %d:%02d left".format(remSec / 60, remSec % 60)
+                handler.postDelayed(this, 1000)
+            }
+        }
+        ticker = r
+        handler.post(r)
     }
 
     // ---- Navigation --------------------------------------------------------
@@ -122,6 +174,16 @@ class BlockActivity : Activity() {
     }
 
     // ---- View helpers ------------------------------------------------------
+
+    private fun eyebrow(text: String): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = 12f
+            setTextColor(Color.parseColor("#B26A0A"))
+            gravity = Gravity.CENTER
+            letterSpacing = 0.18f
+            setTypeface(typeface, Typeface.BOLD)
+        }
 
     private fun label(text: String, size: Float, color: String,
                       bold: Boolean = false, topPad: Int = 0): TextView =
@@ -140,7 +202,7 @@ class BlockActivity : Activity() {
             textSize = 15f
             setTextColor(Color.parseColor("#6B6256"))
             gravity = Gravity.CENTER
-            lineHeight = dp(22)
+            setLineSpacing(0f, 1.3f)  // API 1+, unlike lineHeight (API 28)
             setPadding(0, dp(topPad), 0, dp(botPad))
         }
 
