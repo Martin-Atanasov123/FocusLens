@@ -2,19 +2,29 @@
 
 ## Project Overview
 
-FocusLens is a privacy-first, local-only screen time tracker for a single user.
-A Python tray agent records active-window time on Windows, a Chrome extension
-adds per-domain browser time, and an Expo Android app adds phone app usage.
-Everything aggregates into one local SQLite database served by a loopback Flask
-server with an HTML dashboard — no cloud, no accounts. Remote phone access is
-an opt-in Cloudflare quick tunnel. A static landing page deploys to Netlify.
+FocusLens has two distinct products sharing one repo:
+
+1. **Desktop + extension tracker** — privacy-first, local-only. A Python tray
+   agent records active-window time on Windows; a Chrome MV3 extension adds
+   per-domain browser time. Everything aggregates into one local SQLite database
+   served by a loopback Flask server with an HTML dashboard — no cloud, no
+   accounts. Remote access is an opt-in Cloudflare quick tunnel.
+
+2. **Android consumer app** — standalone premium screen-time blocker. An
+   always-on Kotlin foreground service (`FocusBlockerService`) blocks apps after
+   configurable daily limits and during manual focus sessions. Onboarding, a
+   RevenueCat paywall, and Sentry crash reporting are already integrated.
+   Optionally syncs usage to the desktop agent over LAN.
 
 ## Tech Stack
 
 - Desktop agent: Python 3 — Flask, pystray, pywin32, psutil, SQLite (WAL)
 - Dashboard: vanilla HTML/CSS/JS, single files (no framework, no build step)
 - Browser extension: Chrome MV3, TypeScript, Vite, Vitest (pnpm workspace)
-- Mobile: Expo / React Native (Android only), EAS cloud builds, npm
+- Mobile: Expo / React Native (Android only), EAS cloud builds, npm;
+  custom Kotlin native module (foreground service, overlay activity);
+  RevenueCat (`react-native-purchases` v10 + `react-native-purchases-ui` v10);
+  Sentry (`@sentry/react-native`)
 - Packaging: PyInstaller (`focuslens.spec`); remote access via `cloudflared`
 - Hosting: Netlify, static only, publishes `website/`
 
@@ -59,14 +69,38 @@ apps/desktop/
   dashboard/index.html desktop dashboard (self-contained, CDN qrcodejs)
   dashboard/mobile.html phone view, PWA-capable; token-from-URL for tunnel
 apps/extension/src/    tracker.ts (tab sessions), transport.ts (buffer+POST)
-apps/mobile/src/       sync.ts (UsageStats → POST /events), App.tsx (setup UI)
+apps/mobile/src/
+  App.tsx              root: onboarding, permission gates, navigation
+  FocusScreen.tsx      start/stop focus sessions
+  LimitsScreen.tsx     per-app daily limits, Pro upgrade gate
+  OnboardingScreen.tsx 3-step setup: permissions + first limit
+  PaywallScreen.tsx    fallback paywall (when RC paywall fails)
+  paywall/config.ts    RC key, entitlement, free-tier thresholds
+  paywall/purchases.ts RC wrapper: configurePurchases, presentPaywall, restore
+  paywall/useEntitlements.ts  hook: isPro, loading, refresh
+  observability.ts     Sentry init (no-op until DSN set)
+  sync.ts              UsageStats → POST /events (desktop agent sync)
+apps/mobile/modules/focus-blocker/android/…/focusblocker/
+  FocusBlockerModule.kt   Expo bridge (JS ↔ Kotlin)
+  FocusBlockerService.kt  foreground service: 1 s tick, limit checks every 30 s
+  BlockActivity.kt        full-screen overlay over blocked apps
+  LimitStore.kt           SharedPreferences: per-app daily limits + joker windows
+  BlockStats.kt           SharedPreferences: block event counter (paywall gate)
+  UsageHelper.kt          UsageStatsManager: today's per-app seconds
+  BootReceiver.kt         restart service on boot + MY_PACKAGE_REPLACED
 packages/shared/src/   TS types + time/domain utils shared with extension
 website/index.html     Netlify landing page (static, self-contained)
 ```
 
-Data flow: sources POST minute buckets to Flask `/events`; dashboard reads
-`/api/summary`. Desktop writes accumulate (`upsert_usage`); Android snapshots
-replace (`replace_usage`, midnight bucket) so repeated syncs never double-count.
+Desktop data flow: sources POST minute buckets to Flask `/events`; dashboard
+reads `/api/summary`. Desktop writes accumulate (`upsert_usage`); Android
+snapshots replace (`replace_usage`, midnight bucket) so repeated syncs
+never double-count.
+
+Android blocking flow: `FocusBlockerService` ticks every second, reads
+foreground app via `UsageStatsManager`, compares to `LimitStore`, launches
+`BlockActivity` as a full-screen overlay when a limit is exceeded. Block count
+in `BlockStats` gates the free tier (3 events → paywall).
 
 ## Data Model
 
@@ -111,9 +145,24 @@ None. Configuration lives in the `settings` table; the data dir derives from
 
 ## Active Context
 
-- EAS Android build is ready but blocked on the user's Expo login
-  (`npx eas-cli login`, then `npm run build:apk` in apps/mobile).
-- `qrcode@1.5.3` was replaced by synchronous `qrcodejs@1.0.0` after the async
-  `.toCanvas()` silently failed; QR target is a `<div>`, not `<canvas>`.
-- iOS tracking is impossible (no public Screen Time API); the iPhone story is
-  the PWA dashboard viewer only.
+- **Android app is in active development** as a consumer blocker. Core blocking
+  (FocusBlockerService + BlockActivity), daily limits, onboarding, and a
+  RevenueCat paywall are all implemented.
+- **RevenueCat** test key: `test_HZKejLZpfRYSXJpMBtCKUOwUFCK`; entitlement:
+  `focuslenz Pro`. Dashboard still needs: Products (monthly/yearly), Entitlement
+  wired to Default Offering, and a Paywall template created (AI paywall editor).
+  Until done, `presentPaywall()` returns `error: true` and the app falls back to
+  the custom `PaywallScreen`.
+- **Testing paywall** without Google Play: 5-tap dev toggle on the logo forces
+  `isPro = true`; or manually grant entitlement from the RevenueCat dashboard.
+- **Sentry** DSN placeholder in `src/observability.ts` — replace with a real DSN
+  to activate crash reporting.
+- **USB install** — if a previous EAS-signed build is on the phone, run
+  `adb uninstall com.focuslens.mobile` before `npx expo run:android`.
+- **Next phases (plan):** Phase 3 — Streaks (daily habit, D30 retention);
+  Phase 5 — Scheduled blocks (Pro: block Instagram 9–18 on weekdays);
+  Phase 7 — Play Store listing ($25 Google Play Console).
+- `qrcode@1.5.3` was replaced by synchronous `qrcodejs@1.0.0` (desktop
+  dashboard); QR target is a `<div>`, not `<canvas>`.
+- iOS: Apple exposes no third-party Screen Time API; iPhones get the PWA
+  dashboard viewer only.

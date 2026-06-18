@@ -26,12 +26,13 @@ import android.widget.TextView
 class BlockActivity : Activity() {
 
     companion object {
-        const val EXTRA_PACKAGE   = "package"
-        const val EXTRA_UNTIL     = "until"
-        const val EXTRA_MODE      = "mode"
-        const val EXTRA_APP_LABEL = "app_label"
-        const val EXTRA_USED_SECS = "used_secs"
+        const val EXTRA_PACKAGE    = "package"
+        const val EXTRA_UNTIL      = "until"
+        const val EXTRA_MODE       = "mode"
+        const val EXTRA_APP_LABEL  = "app_label"
+        const val EXTRA_USED_SECS  = "used_secs"
         const val EXTRA_LIMIT_SECS = "limit_secs"
+        const val EXTRA_OPEN_COUNT = "open_count"
 
         const val MODE_FOCUS_SESSION  = "focus_session"
         const val MODE_LIMIT_EXCEEDED = "limit_exceeded"
@@ -69,9 +70,16 @@ class BlockActivity : Activity() {
     // ---- Focus session view ------------------------------------------------
 
     private fun buildFocusSessionView(root: LinearLayout) {
-        root.addView(label("Stay focused", 28f, "#1C1610", bold = true))
-        root.addView(body("This app is paused during your focus session.", topPad = 16, botPad = 32))
-        root.addView(primaryBtn("Back to focus") { goHome() })
+        val openCount = intent.getIntExtra(EXTRA_OPEN_COUNT, 0)
+        root.addView(label("Do you really need\nthis right now?", 26f, "#1C1610", bold = true))
+        root.addView(body("Take a breath.", topPad = 16, botPad = 16))
+        if (openCount > 0) {
+            val times = if (openCount == 1) "time" else "times"
+            root.addView(eyebrow("Tried to open this $openCount $times today"))
+        }
+        root.addView(primaryBtn("Back to focus") { goHome() }.apply {
+            (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(24)
+        })
     }
 
     // ---- Limit exceeded view -----------------------------------------------
@@ -89,11 +97,14 @@ class BlockActivity : Activity() {
         val usedMin  = (usedSecs + 59) / 60
         val limitMin = limitSecs / 60
 
-        // Eyebrow + hero usage number
-        root.addView(eyebrow("TIME'S UP"))
-        root.addView(label("$usedMin min", 60f, "#1C1610", bold = true, topPad = 8))
-        root.addView(label("on $appLabel today", 16f, "#6B6256", topPad = 4))
-        root.addView(body("Daily limit: $limitMin min", topPad = 6, botPad = 32))
+        val openCount = intent.getIntExtra(EXTRA_OPEN_COUNT, 0)
+        val openStr   = if (openCount > 0) " · opened $openCount×" else ""
+
+        // Positive reframing: the limit is time they chose to protect
+        root.addView(eyebrow("LIMIT REACHED"))
+        root.addView(label("You've reclaimed\n${limitMin} min today.", 26f, "#1C1610", bold = true, topPad = 12))
+        root.addView(label("$appLabel wants that back.", 16f, "#6B6256", topPad = 8))
+        root.addView(body("Used $usedMin min of $limitMin min$openStr", topPad = 8, botPad = 32))
 
         when {
             jokerActive -> {
@@ -110,12 +121,15 @@ class BlockActivity : Activity() {
                     finish()
                 }
                 root.addView(jokerBtn)
-                root.addView(ghostBtn("I'm done for today") { goHome() })
+                root.addView(ghostBtn("I'm done for today") {
+                    limitStore.markJokerExhausted(pkg)
+                    goHome()
+                })
                 startJokerGate(jokerBtn, "Use 5 more minutes")
             }
             else -> {
-                // Joker spent — hard block for the rest of the day.
-                root.addView(body("You've already used your extra 5 minutes today.",
+                // Joker spent or declined — hard block for the rest of the day.
+                root.addView(body("That's your limit for today.\nSee you tomorrow.",
                     topPad = 0, botPad = 24))
                 root.addView(primaryBtn("I'm done for today") { goHome() })
             }

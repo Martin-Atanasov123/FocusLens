@@ -55,6 +55,9 @@ class FocusBlockerService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
 
+    // Cached — avoids creating a new object on every tick
+    private val limitStore by lazy { LimitStore(this) }
+
     // Focus-session state
     private var blocked: Set<String> = emptySet()
     private var until: Long = 0L
@@ -67,10 +70,11 @@ class FocusBlockerService : Service() {
 
     // Limit-check cadence
     private var limitTick = 0
+    private var prevForeground: String? = null
 
     private val ticker = object : Runnable {
         override fun run() {
-            tick()
+            try { tick() } catch (_: Exception) { /* keep ticking even if one tick throws */ }
             if (isRunning) handler.postDelayed(this, TICK_MS)
         }
     }
@@ -91,6 +95,9 @@ class FocusBlockerService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_START_LIMITS_ONLY -> {
+                // Look back 5 s so we catch the app that's already in the foreground.
+                // Without this, lastCheck stays 0 and queryEvents(0, now) scans from epoch.
+                if (lastCheck == 0L) lastCheck = System.currentTimeMillis() - 5_000L
                 ensureRunning()
             }
             ACTION_START -> {
@@ -135,6 +142,12 @@ class FocusBlockerService : Service() {
         val pkg = currentForeground ?: return
         if (pkg == packageName) return
 
+        // Arm an immediate limit check when the user switches to a different app
+        if (pkg != prevForeground) {
+            prevForeground = pkg
+            limitTick = LIMIT_CHECK_EVERY
+        }
+
         // 1. Focus session check (every tick)
         if (blocked.contains(pkg) && until > now && now - lastBlockShownAt > RESHOW_GRACE_MS) {
             registerBlockEvent(pkg, now)
@@ -143,7 +156,7 @@ class FocusBlockerService : Service() {
             return
         }
 
-        // 2. Limit check (every LIMIT_CHECK_EVERY ticks)
+        // 2. Limit check (every LIMIT_CHECK_EVERY ticks, or immediately on app switch)
         limitTick++
         if (limitTick >= LIMIT_CHECK_EVERY) {
             limitTick = 0
@@ -158,7 +171,6 @@ class FocusBlockerService : Service() {
             ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "focuslens:check")
             ?.also { it.acquire(5_000L) }
         try {
-            val limitStore = LimitStore(this)
             val limit = limitStore.getLimit(pkg) ?: return
 
             if (limitStore.isJokerActiveNow(pkg)) return  // joker window still open
@@ -205,7 +217,10 @@ class FocusBlockerService : Service() {
      */
     private fun registerBlockEvent(pkg: String, now: Long) {
         val isNewEvent = pkg != lastBlockedPkg || now - lastBlockShownAt > NEW_EVENT_GAP_MS
-        if (isNewEvent) BlockStats.increment(this)
+        if (isNewEvent) {
+            BlockStats.increment(this)
+            BlockStats.incrementForPkg(this, pkg)
+        }
         lastBlockedPkg = pkg
     }
 
@@ -214,9 +229,10 @@ class FocusBlockerService : Service() {
     private fun showFocusBlock(pkg: String) {
         val intent = Intent(this, BlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-            putExtra(BlockActivity.EXTRA_PACKAGE, pkg)
-            putExtra(BlockActivity.EXTRA_UNTIL,   until)
-            putExtra(BlockActivity.EXTRA_MODE,    BlockActivity.MODE_FOCUS_SESSION)
+            putExtra(BlockActivity.EXTRA_PACKAGE,    pkg)
+            putExtra(BlockActivity.EXTRA_UNTIL,      until)
+            putExtra(BlockActivity.EXTRA_MODE,       BlockActivity.MODE_FOCUS_SESSION)
+            putExtra(BlockActivity.EXTRA_OPEN_COUNT, BlockStats.todayCountForPkg(this@FocusBlockerService, pkg))
         }
         startActivity(intent)
     }
@@ -229,6 +245,7 @@ class FocusBlockerService : Service() {
             putExtra(BlockActivity.EXTRA_APP_LABEL,  label)
             putExtra(BlockActivity.EXTRA_USED_SECS,  usedSecs)
             putExtra(BlockActivity.EXTRA_LIMIT_SECS, limitSecs)
+            putExtra(BlockActivity.EXTRA_OPEN_COUNT, BlockStats.todayCountForPkg(this@FocusBlockerService, pkg))
         }
         startActivity(intent)
     }
@@ -237,7 +254,7 @@ class FocusBlockerService : Service() {
 
     private fun shouldKeepRunning(): Boolean {
         val sessionActive = blocked.isNotEmpty() && until > System.currentTimeMillis()
-        val hasLimits     = LimitStore(this).getAllLimits().isNotEmpty()
+        val hasLimits     = limitStore.getAllLimits().isNotEmpty()
         return sessionActive || hasLimits
     }
 

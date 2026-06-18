@@ -97,6 +97,52 @@ Engine transitions, bucket math, limit thresholds, store semantics
 (accumulate vs replace), and the remote token guard under pytest (62 tests);
 extension tab-session tracker, offline buffer, and shared utils under Vitest.
 
+## Android pivot: consumer blocker (switched from sync companion)
+
+The original Android app was a pure sync companion — read `UsageStatsManager`,
+POST to the desktop agent, nothing else. In 2026 the product was repositioned as
+a standalone consumer screen-time blocker ("Opal for Android") with a
+RevenueCat paywall. The sync path was kept as an opt-in feature but is no longer
+the primary flow.
+
+**Blocking architecture:** a Kotlin foreground service (`FocusBlockerService`)
+runs permanently on the phone. Foreground-app detection uses `UsageStatsManager`
+event queries (1 s interval) instead of `AccessibilityService` (which requires a
+scary permissions dialog and is flagged by Play Store review). `BlockActivity`
+is a full-screen `Activity` launched with `FLAG_ACTIVITY_NEW_TASK` — the
+cheapest reliable overlay on Android without `SYSTEM_ALERT_WINDOW` drama.
+
+**Doze hardening:** `FocusBlockerService` is a foreground service (exempt from
+Doze battery restrictions). A 5 s `PARTIAL_WAKE_LOCK` is acquired in
+`checkLimit()` as an extra safety net for screen-off limit checks.
+
+**Post-update restart:** `BootReceiver` handles both `ACTION_BOOT_COMPLETED`
+and `ACTION_MY_PACKAGE_REPLACED` so the service restarts automatically after
+a Play Store update without requiring a reboot.
+
+## RevenueCat paywall
+
+Chosen over Stripe/manual because: (a) Google Play Billing is required by Play
+Store policy for in-app purchases on Android, (b) RevenueCat wraps the Billing
+SDK and handles subscription lifecycle, renewals, and refunds server-side, (c)
+the RC dashboard lets us manually grant entitlements to test devices without a
+real Play Store account. Free tier covers the MVP comfortably.
+
+Key identifiers: entitlement `focuslenz Pro`; products `monthly` / `yearly`;
+paywall template in the RC AI editor. The native `RevenueCatUI.presentPaywall()`
+call shows the RC-hosted template; if it returns `error: true` (template not
+configured), the app falls back to the custom `PaywallScreen`.
+
+`isRevenueCatConfigured()` checks `length > 10 && !includes("YOUR_KEY")` —
+not `startsWith("goog_")` — because test keys use the `test_` prefix.
+
+## Sentry crash reporting
+
+`observability.ts` wraps `@sentry/react-native` with a DSN guard so the
+module is safe to import before a real DSN is configured. All Sentry calls are
+no-ops until `SENTRY_DSN` is replaced with a real value — prevents accidental
+telemetry during development.
+
 ## Naming
 
 **FocusLens** is kept — descriptive and unclaimed by major tools.

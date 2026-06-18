@@ -22,4 +22,19 @@ object BlockStats {
 
     fun count(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(KEY_COUNT, 0)
+
+    /** Increment today's block count for a specific package (resets each day). */
+    fun incrementForPkg(context: Context, pkg: String) {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val key = "opens_${todayKey()}_$pkg"
+        p.edit().putInt(key, p.getInt(key, 0) + 1).apply()
+    }
+
+    /** Returns how many times this package triggered a block today. */
+    fun todayCountForPkg(context: Context, pkg: String): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt("opens_${todayKey()}_$pkg", 0)
+
+    private fun todayKey(): String =
+        java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
 }

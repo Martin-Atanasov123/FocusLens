@@ -25,9 +25,13 @@ import FocusScreen from "./screens/FocusScreen";
 import LimitsScreen from "./screens/LimitsScreen";
 import OnboardingScreen from "./screens/OnboardingScreen";
 import PaywallScreen from "./screens/PaywallScreen";
-import { getBlockEventCount } from "./blocking/FocusBlocker";
+import { getBlockEventCount, getLimits, AppLimitInfo } from "./blocking/FocusBlocker";
 import { useEntitlements } from "./paywall/useEntitlements";
 import { FREE_BLOCK_EVENT_LIMIT } from "./paywall/config";
+import {
+  presentPaywall,
+  presentCustomerCenter,
+} from "./paywall/purchases";
 
 import {
   PairConfig,
@@ -99,9 +103,24 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
-  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false); // fallback custom paywall
+  const [limits, setLimits] = useState<AppLimitInfo[]>([]);
 
   const { isPro, refresh: refreshEntitlements } = useEntitlements();
+
+  /**
+   * Open the RevenueCat paywall. Falls back to the custom PaywallScreen when
+   * the RC paywall template hasn't been configured in the dashboard yet.
+   */
+  const openPaywall = useCallback(async () => {
+    const result = await presentPaywall();
+    if (result.purchased) {
+      refreshEntitlements();
+    } else if (result.error) {
+      // RC paywall not configured yet → show local fallback
+      setPaywallOpen(true);
+    }
+  }, [refreshEntitlements]);
 
   // QR scanner
   const [scanning, setScanning] = useState(false);
@@ -118,6 +137,7 @@ export default function App() {
     setPermission(perm);
     if (perm) {
       try {
+        setLimits(getLimits());
         setUsage(await todayUsageSeconds());
       } catch {
         setUsage([]);
@@ -180,12 +200,12 @@ export default function App() {
   // so it never nags — further upgrades come from feature gates (e.g. 2nd limit).
   useEffect(() => {
     if (isPro || !onboarded || !permission) return;
-    let cancelled = false;
+    let alive = true;
     const maybeShow = async () => {
-      if (cancelled || (await AsyncStorage.getItem("fl_paywall_seen"))) return;
+      if (!alive || (await AsyncStorage.getItem("fl_paywall_seen"))) return;
       if (getBlockEventCount() >= FREE_BLOCK_EVENT_LIMIT) {
         await AsyncStorage.setItem("fl_paywall_seen", "1");
-        if (!cancelled) setPaywallOpen(true);
+        if (alive) openPaywall();
       }
     };
     maybeShow();
@@ -193,10 +213,10 @@ export default function App() {
       if (st === "active") maybeShow();
     });
     return () => {
-      cancelled = true;
+      alive = false;
       sub.remove();
     };
-  }, [isPro, onboarded, permission]);
+  }, [isPro, onboarded, permission, openPaywall]);
 
   // Connection heartbeat: resolve a reachable URL (LAN → tunnel) every 5s.
   useEffect(() => {
@@ -338,34 +358,68 @@ export default function App() {
       ? "Desktop unreachable"
       : "Not connected";
 
+  // Build quick-lookup map: packageName → limit info
+  const limitMap: Record<string, AppLimitInfo> = {};
+  limits.forEach((l) => { limitMap[l.packageName] = l; });
+
+  const exceededCount = limits.filter((l) => l.usedSecs >= l.dailyLimitSecs).length;
+  const nearCapCount  = limits.filter(
+    (l) => l.usedSecs < l.dailyLimitSecs && l.usedSecs / l.dailyLimitSecs >= 0.8
+  ).length;
+
   const header = (
     <View>
       <Text style={s.logo}>
         Focus<Text style={s.logoEm}>Lens</Text>
       </Text>
-      <Text style={s.tag}>Screen time for your phone</Text>
 
       <Text style={s.heroEye}>TOTAL · TODAY</Text>
       <Text style={s.heroNum}>{fmt(totalSecs)}</Text>
       <Text style={s.heroDate}>{todayStr()}</Text>
+
+      {/* Limits status bar */}
+      {limits.length > 0 && (
+        <Pressable style={s.limitsStatusBar} onPress={() => setLimitsOpen(true)}>
+          <View style={[
+            s.limitsStatusDot,
+            { backgroundColor: exceededCount > 0 ? C.red : nearCapCount > 0 ? C.amber : C.green }
+          ]} />
+          <Text style={s.limitsStatusText}>
+            {exceededCount > 0
+              ? `${exceededCount} limit${exceededCount > 1 ? "s" : ""} reached`
+              : nearCapCount > 0
+              ? `${nearCapCount} app${nearCapCount > 1 ? "s" : ""} near cap`
+              : `${limits.length} limit${limits.length > 1 ? "s" : ""} active`}
+          </Text>
+          <Text style={s.limitsStatusChev}>›</Text>
+        </Pressable>
+      )}
 
       <View style={s.actionRow}>
         <Pressable style={[s.focusBtn, s.actionHalf]} onPress={() => setFocusOpen(true)}>
           <Text style={s.focusBtnText}>Focus session</Text>
         </Pressable>
         <Pressable style={[s.limitsBtn, s.actionHalf]} onPress={() => setLimitsOpen(true)}>
-          <Text style={s.limitsBtnText}>Daily limits</Text>
+          <Text style={s.limitsBtnText}>
+            {limits.length > 0 ? `Daily limits · ${limits.length}` : "Daily limits"}
+          </Text>
         </Pressable>
       </View>
 
       <View style={s.sectionRule}>
-        <Text style={s.sectionLabel}>APPS</Text>
+        <Text style={s.sectionLabel}>TODAY'S APPS</Text>
       </View>
     </View>
   );
 
   const footer = (
     <View style={s.optWrap}>
+      {/* Pro: manage / cancel subscription via RevenueCat Customer Center */}
+      {isPro && (
+        <Pressable style={s.manageBtn} onPress={presentCustomerCenter}>
+          <Text style={s.manageBtnText}>Manage subscription</Text>
+        </Pressable>
+      )}
       {!showDesktop ? (
         <Pressable style={s.optToggle} onPress={() => setShowDesktop(true)}>
           <View style={[s.statusDot, { backgroundColor: cfg ? statusColor : C.ink3 }]} />
@@ -468,18 +522,41 @@ export default function App() {
         refreshing={false}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => {
-          const max = usage[0]?.secs || 1;
+          const max     = usage[0]?.secs || 1;
+          const limit   = limitMap[item.key];
+          const hasLimit   = !!limit;
+          const exceeded   = hasLimit && item.secs >= limit.dailyLimitSecs;
+          const nearCap    = hasLimit && !exceeded && item.secs / limit.dailyLimitSecs >= 0.8;
+          const barWidth = (hasLimit
+            ? `${Math.min(100, (item.secs / limit.dailyLimitSecs) * 100)}%`
+            : `${(item.secs / max) * 100}%`) as `${number}%`;
+
           return (
             <View style={s.row}>
               <View style={s.rowLeft}>
-                <Text style={s.rowLabel} numberOfLines={1}>
-                  {item.label}
-                </Text>
-                <View style={s.barTrack}>
-                  <View style={[s.barFill, { width: `${(item.secs / max) * 100}%` }]} />
+                <View style={s.rowTop}>
+                  <Text style={s.rowLabel} numberOfLines={1}>{item.label}</Text>
+                  {hasLimit ? (
+                    <Text style={[s.rowVal, exceeded && s.rowValRed, nearCap && s.rowValAmber]}>
+                      {fmt(item.secs)}{" "}
+                      <Text style={s.rowValLimit}>/ {fmt(limit.dailyLimitSecs)}</Text>
+                    </Text>
+                  ) : (
+                    <Text style={s.rowVal}>{fmt(item.secs)}</Text>
+                  )}
                 </View>
+                <View style={s.barTrack}>
+                  <View style={[
+                    s.barFill,
+                    { width: barWidth },
+                    exceeded && s.barFillRed,
+                    nearCap  && s.barFillAmber,
+                  ]} />
+                </View>
+                {hasLimit && limit.jokerUsedToday && (
+                  <Text style={s.jokerNote}>+5 min joker used today</Text>
+                )}
               </View>
-              <Text style={s.rowVal}>{fmt(item.secs)}</Text>
             </View>
           );
         }}
@@ -522,8 +599,9 @@ export default function App() {
         visible={limitsOpen}
         onClose={() => setLimitsOpen(false)}
         isPro={isPro}
-        onRequestUpgrade={() => setTimeout(() => setPaywallOpen(true), 250)}
+        onRequestUpgrade={openPaywall}
       />
+      {/* Custom paywall — fallback when RC paywall template not yet configured */}
       <PaywallScreen
         visible={paywallOpen}
         onClose={() => setPaywallOpen(false)}
@@ -560,7 +638,25 @@ const s = StyleSheet.create({
   heroEye: { fontSize: 10, letterSpacing: 2, color: C.ink3, marginBottom: 6 },
   heroNum: { fontSize: 64, fontWeight: "200", color: C.ink, letterSpacing: -2, lineHeight: 68 },
   heroDate: { fontSize: 13, color: C.ink2, marginTop: 4, fontVariant: ["tabular-nums"] },
-  actionRow: { flexDirection: "row", gap: 10, marginTop: 18 },
+
+  // limits status bar
+  limitsStatusBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surf,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 14,
+    gap: 8,
+  },
+  limitsStatusDot: { width: 8, height: 8, borderRadius: 4 },
+  limitsStatusText: { flex: 1, fontSize: 13, color: C.ink2, fontWeight: "500" },
+  limitsStatusChev: { fontSize: 16, color: C.ink3 },
+
+  actionRow: { flexDirection: "row", gap: 10, marginTop: 14 },
   actionHalf: { flex: 1 },
   focusBtn: { backgroundColor: C.amber, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
   focusBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
@@ -570,12 +666,19 @@ const s = StyleSheet.create({
   sectionLabel: { fontSize: 10, letterSpacing: 2, color: C.ink3 },
 
   // app rows
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 10 },
-  rowLeft: { flex: 1, marginRight: 14 },
-  rowLabel: { fontSize: 14, color: C.ink, marginBottom: 6 },
+  row: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  rowLeft: { flex: 1 },
+  rowTop: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginBottom: 7 },
+  rowLabel: { fontSize: 14, color: C.ink, flex: 1, marginRight: 8 },
   barTrack: { height: 3, backgroundColor: C.surf2, borderRadius: 99, overflow: "hidden" },
   barFill: { height: 3, backgroundColor: C.amber, borderRadius: 99 },
-  rowVal: { fontSize: 13, color: C.ink2, fontVariant: ["tabular-nums"], minWidth: 56, textAlign: "right" },
+  barFillAmber: { backgroundColor: "#E08C10" },
+  barFillRed: { backgroundColor: C.red },
+  rowVal: { fontSize: 12.5, color: C.ink2, fontVariant: ["tabular-nums"] },
+  rowValAmber: { color: C.amber },
+  rowValRed: { color: C.red },
+  rowValLimit: { color: C.ink3, fontSize: 11.5 },
+  jokerNote: { fontSize: 11, color: C.ink3, marginTop: 5 },
   note: { fontSize: 12, color: C.ink3, textAlign: "center", paddingVertical: 24 },
 
   // cards (permission + optional desktop)
@@ -608,6 +711,10 @@ const s = StyleSheet.create({
     color: C.ink,
     marginBottom: 8,
   },
+
+  // manage subscription (Pro only)
+  manageBtn: { paddingVertical: 10, alignItems: "center", marginBottom: 8 },
+  manageBtnText: { fontSize: 12.5, color: C.ink3, textDecorationLine: "underline" },
 
   // optional desktop section
   optWrap: { marginTop: 24, marginBottom: 40 },

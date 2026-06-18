@@ -5,26 +5,32 @@
 
 ---
 
-## 0. Как е позициониран FocusLens (отправна точка)
+## 0. Как е позициониран FocusLens (актуализирано 2026-Q2)
 
-FocusLens е **privacy-first, local-only, single-user** screen-time трекер, който уникално
-обединява **три източника в една локална база**: десктоп активен прозорец (Python агент),
-браузър по домейн (Chrome extension) и телефон по приложение (Android UsageStats). Без облак,
-без акаунти, без качване на данни. Loopback Flask + локален HTML дашборд; опционален
-Cloudflare tunnel за отдалечен достъп.
+> **Бележка за пивота:** Анализът по-долу е написан когато FocusLens беше
+> privacy-first local tracker. Android приложението оттогава е ребрандирано
+> и пренасочено като **самостоятелен premium consumer screen-time blocker**
+> ("Opal за Android"). Blocking е ВЕЧЕ ✅ в продукта. Позиционирането е
+> "Blocks TikTok after 30 minutes. Automatically." — не "privacy-first".
+> North Star: 500 платени потребители преди да оптимизираш каквото и да е.
 
-**Текущо изградено (от кода):**
+---
 
-- Автоматичен tracking: десктоп apps, браузър domains, телефон apps; idle detection.
-- Категории + правила (`add_rule`, pattern-based категоризация app/domain/any).
-- Лимити с меки прагове 50/80/100% + дедупликация на нотификациите (`limits.py`).
-- Дневно резюме (`day_summary`), седмични тенденции (`daily_totals`), week-over-week движещи се приложения (`app_week_movers`).
-- Retention sweep (auto изтриване на стари данни).
+FocusLens е **privacy-first, local-only, single-user** screen-time трекер (десктоп),
+плюс **Android consumer blocker** с RevenueCat paywall. Обединява **три
+източника в една локална база**: десктоп активен прозорец (Python агент),
+браузър по домейн (Chrome extension) и телефон по приложение (Android UsageStats).
+
+**Текущо изградено:**
+
+- Десктоп: автоматичен tracking, категории + правила, лимити 50/80/100%, retention sweep.
+- Android: FocusBlockerService (foreground service), daily limits (LimitStore), BlockActivity overlay, Focus Sessions, Onboarding (3 стъпки), RevenueCat paywall (react-native-purchases v10), Sentry crash reporting.
 - Десктоп + мобилен дашборд + WebView; QR/token сдвояване; tunnel.
 
-**Истинският ти moat:** обединяването телефон+компютър+браузър в **един локален изглед**.
-Дори ActivityWatch (най-близкият идеологически конкурент) изостава точно при cross-device
-синхронизацията. Това е територията, която трябва да защитаваш — не блокирането, не AI-то.
+**Pending (от плана):** Streaks (Phase 3), Scheduled Blocks (Phase 5), Play Store (Phase 7).
+
+**Moat на десктопа:** обединяването телефон+компютър+браузър в един локален изглед.
+**Moat на мобилното:** premium блокер за Android с добре направен UX (Opal не е на Android).
 
 ---
 
@@ -119,7 +125,7 @@ Cloudflare tunnel за отдалечен достъп.
 | Focus-time / context-switch метрика | ❌ | ❌ | ❌ | частично | ✅ | — | — |
 | Goals / дневни таргети | ❌ | ❌ | ❌ | ✅ | ✅ | App timers | ✅ |
 | Лимити + прагови известия | ✅ (50/80/100%) | ❌ | частично | ✅ | ✅ | ✅ | ✅ |
-| Focus session / блокиране | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Focus session / блокиране | ✅ **(Android)** | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | Mindful friction (пауза преди app) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (one sec) |
 | Break / overwork reminders | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | — |
 | Stopwatch / ръчно time entry | ❌ | ❌ | ✅ | ❌ | ❌ | — | — |
@@ -163,7 +169,10 @@ Cloudflare tunnel за отдалечен достъп.
 
 ### 🔴 Tier 3 — внимавай: конфликт с концепцията или отделен продукт
 
-11. **Твърдо блокиране на сайтове/приложения (RescueTime/Opal/Cold Turkey).** Това е *друг продукт* (enforcement, не measurement). Изисква системни хукове, поражда заобикаляне-и-битки, и размива "огледало, не пазач" позиционирането. *Ако изобщо — направи го като opt-in Focus session, не като ядро.*
+11. **Твърдо блокиране на сайтове/приложения** — ~~Tier 3 препоръка (2026-Q1).~~
+    **Вече ✅ в продукта.** Android пивотът направи блокирането ядро на приложението.
+    `FocusBlockerService` + `BlockActivity` + `LimitStore` го имплементират.
+    Препоръката по-долу е за десктопа — там blocking все още не е в плана.
 
 12. **AI категоризация (Rize/Timing).** Изкушаващо, но: (а) местен LLM е тежък, облачен LLM **чупи local-only обещанието**, (б) твоите regex правила вече покриват 90%. *По-скоро подобри UX на правилата (авто-предложения от честите неназначени apps) отколкото истински AI.*
 

@@ -47,13 +47,21 @@ paste, Save. The extension sends only hostnames (never full URLs), only to
 
 ## Phone
 
+**Android app blocker:** the mobile app (`apps/mobile/`) is a standalone
+consumer screen-time blocker — not just a companion. It blocks apps
+automatically after daily limits you set, using an always-on foreground service.
+First 3 blocks free; Pro unlocks unlimited limits (RevenueCat paywall).
+See [apps/mobile/README.md](apps/mobile/README.md) for build instructions.
+
+**Desktop sync (optional):** the Android app can also sync today's usage to the
+desktop agent over LAN. Pair by scanning the *Pair app* QR from the desktop
+dashboard → Settings.
+
 **View from the phone (no install):** dashboard → Settings → Show QR →
 *View (Wi-Fi)* — scan, opens in the browser; add to home screen for a PWA.
 
-**Track phone apps (Android):** build the APK in Expo's cloud — no Android
-Studio needed. See [apps/mobile/README.md](apps/mobile/README.md). Pair by
-scanning the *Pair app* QR. iOS cannot be tracked (Apple exposes no Screen
-Time API); iPhones get the PWA viewer only.
+**iOS:** Apple exposes no third-party Screen Time API; iPhones get the PWA
+dashboard viewer only.
 
 **From any network:** tray → *Remote access (anywhere)* starts an embedded
 Cloudflare quick tunnel (`cloudflared.exe` next to the agent). Requests

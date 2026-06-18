@@ -7,10 +7,15 @@
     "scheme": "focuslens",
     "userInterfaceStyle": "light",
     "backgroundColor": "#F2EDE3",
+    "icon": "./assets/icon.png",
     "platforms": [
       "android"
     ],
     "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A1410"
+      },
       "package": "com.focuslens.mobile",
       "usesCleartextTraffic": true,
       "permissions": [

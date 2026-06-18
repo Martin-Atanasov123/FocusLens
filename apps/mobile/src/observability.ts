@@ -14,7 +14,7 @@
  */
 import * as Sentry from "@sentry/react-native";
 
-const SENTRY_DSN = "YOUR_SENTRY_DSN_HERE";
+const SENTRY_DSN: string = "YOUR_SENTRY_DSN_HERE";
 
 export function isSentryConfigured(): boolean {
   return SENTRY_DSN !== "YOUR_SENTRY_DSN_HERE" && SENTRY_DSN.startsWith("https://");

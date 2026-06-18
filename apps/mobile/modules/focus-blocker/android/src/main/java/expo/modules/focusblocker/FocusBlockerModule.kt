@@ -74,14 +74,10 @@ class FocusBlockerModule : Module() {
         }
 
         Function("removeLimit") { packageName: String ->
-            val store = LimitStore(context)
-            store.removeLimit(packageName)
-            // Stop the service if no more limits and no active session
-            if (store.getAllLimits().isEmpty()) {
-                context.startService(Intent(context, FocusBlockerService::class.java).apply {
-                    action = FocusBlockerService.ACTION_STOP
-                })
-            }
+            LimitStore(context).removeLimit(packageName)
+            // The service checks shouldKeepRunning() on every tick and self-stops
+            // when there are no limits and no active focus session. Sending ACTION_STOP
+            // here would kill any in-progress focus session, which is wrong.
         }
 
         Function("getLimits") {

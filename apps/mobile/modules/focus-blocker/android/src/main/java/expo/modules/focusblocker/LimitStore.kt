@@ -57,6 +57,16 @@ class LimitStore(private val context: Context) {
         prefs.edit().putLong("joker_end_$packageName", endMs).apply()
     }
 
+    /**
+     * Marks the joker as "used today" without granting any extra time.
+     * Called when the user taps "I'm done for today" — ensures the next block
+     * shows only the hard-stop button with no escape hatch.
+     */
+    fun markJokerExhausted(packageName: String) {
+        // joker_end = today's midnight: isJokerUsedToday=true, isJokerActiveNow=false
+        prefs.edit().putLong("joker_end_$packageName", UsageHelper.midnightMs()).apply()
+    }
+
     /** True while the joker window is open (used today AND not yet expired). */
     fun isJokerActiveNow(packageName: String): Boolean {
         val end = prefs.getLong("joker_end_$packageName", 0L)

@@ -75,11 +75,22 @@ Off by default; toggled from the tray menu.
 a 1-minute `chrome.alarms` flush POSTs buckets; unsent events buffer in
 `chrome.storage.local` (drop-oldest cap). Sends hostnames only.
 
-**Android app** (`apps/mobile/`) reads today's per-app foreground seconds via
+**Android app** (`apps/mobile/`) has two roles:
+
+*Blocker (primary):* `FocusBlockerModule.kt` exposes a Kotlin native module to
+React Native. `FocusBlockerService` runs as an Android foreground service that
+ticks every second: it reads the current foreground app via `UsageStatsManager`,
+checks it against `LimitStore` (SharedPreferences), and if the daily limit is
+exceeded launches `BlockActivity` as a full-screen overlay. Block events are
+counted in `BlockStats`; after 3 events the JS paywall gate fires. The service
+starts on boot via `BootReceiver` (handles `ACTION_BOOT_COMPLETED` and
+`ACTION_MY_PACKAGE_REPLACED`). A `PARTIAL_WAKE_LOCK` is held during each limit
+check so Doze mode does not starve the query.
+
+*Sync (optional):* reads today's per-app foreground seconds via
 `UsageStatsManager` (aggregate query, system apps filtered) and POSTs a
-snapshot every ~15 min (`expo-background-fetch`) or on demand. Pairs by
-scanning the dashboard QR (`focuslens://pair` deep link with host/token or
-tunnel URL).
+snapshot every ~15 min or on demand to the desktop agent. Pairs by scanning
+the dashboard QR (`focuslens://pair` deep link with host/token or tunnel URL).
 
 **Dashboard** (`dashboard/index.html`, `mobile.html`) — self-contained HTML
 talking to `/api/*`. The QR modal has three modes: view over Wi-Fi, pair the
