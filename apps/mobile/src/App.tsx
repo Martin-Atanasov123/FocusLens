@@ -397,11 +397,11 @@ export default function App() {
 
       <View style={s.actionRow}>
         <Pressable style={[s.focusBtn, s.actionHalf]} onPress={() => setFocusOpen(true)}>
-          <Text style={s.focusBtnText}>Focus session</Text>
+          <Text style={s.focusBtnText}>⚡ Focus session</Text>
         </Pressable>
         <Pressable style={[s.limitsBtn, s.actionHalf]} onPress={() => setLimitsOpen(true)}>
           <Text style={s.limitsBtnText}>
-            {limits.length > 0 ? `Daily limits · ${limits.length}` : "Daily limits"}
+            {limits.length > 0 ? `🛡️ Daily limits · ${limits.length}` : "🛡️ Daily limits"}
           </Text>
         </Pressable>
       </View>
@@ -554,7 +554,7 @@ export default function App() {
                   ]} />
                 </View>
                 {hasLimit && limit.jokerUsedToday && (
-                  <Text style={s.jokerNote}>+5 min joker used today</Text>
+                  <Text style={s.jokerNote}>🃏 +5 min joker used today</Text>
                 )}
               </View>
             </View>

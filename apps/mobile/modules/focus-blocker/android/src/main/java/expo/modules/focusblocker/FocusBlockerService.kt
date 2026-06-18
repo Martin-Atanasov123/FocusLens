@@ -281,9 +281,9 @@ class FocusBlockerService : Service() {
     private fun buildNotification(): Notification {
         ensureChannel()
         val sessionActive = blocked.isNotEmpty() && until > System.currentTimeMillis()
-        val title   = if (sessionActive) "Focus session active" else "Screen time monitoring active"
+        val title   = if (sessionActive) "⚡ Focus session active" else "🛡️ Daily limits active"
         val content = if (sessionActive) "Blocked apps are paused until your session ends."
-                      else               "FocusLens is enforcing your daily app limits."
+                      else               "FocusLens is tracking your daily limits."
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             Notification.Builder(this, CHANNEL_ID)
         else

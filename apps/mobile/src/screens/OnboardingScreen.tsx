@@ -17,18 +17,18 @@ import { hasUsagePermission, openUsageAccessSettings } from "../sync";
 type Step = 1 | 2 | 3;
 
 const POPULAR_APPS = [
-  "TikTok",
-  "Instagram",
-  "YouTube",
-  "X / Twitter",
-  "Facebook",
-  "Snapchat",
-  "Reddit",
-  "WhatsApp",
-  "Netflix",
-  "Shorts / Reels",
-  "Games",
-  "News / Browser",
+  "TikTok 🎵",
+  "Instagram 📸",
+  "YouTube ▶️",
+  "X / Twitter 𝕏",
+  "Facebook 👥",
+  "Snapchat 👻",
+  "Reddit 🤖",
+  "WhatsApp 💬",
+  "Netflix 🎬",
+  "Shorts / Reels ⚡",
+  "Games 🎮",
+  "News / Browser 📰",
 ];
 
 export default function OnboardingScreen({
@@ -109,7 +109,7 @@ export default function OnboardingScreen({
       {/* ── Step 1: motivation capture ── */}
       {step === 1 && (
         <>
-          <Text style={s.head}>What pulls you in too much?</Text>
+          <Text style={s.head}>What pulls you in too much? 📱</Text>
           <Text style={s.sub}>
             Pick the apps you want to spend less time on.
           </Text>
@@ -141,7 +141,7 @@ export default function OnboardingScreen({
       {/* ── Step 2: usage access ── */}
       {step === 2 && (
         <>
-          <Text style={s.head}>See your real screen time</Text>
+          <Text style={s.head}>See your real screen time 📊</Text>
           <Text style={s.sub}>
             FocusLens reads how long you use each app — the same data Android's
             own Digital Wellbeing uses. Everything stays on your phone.
@@ -185,7 +185,7 @@ export default function OnboardingScreen({
       {/* ── Step 3: overlay + battery ── */}
       {step === 3 && (
         <>
-          <Text style={s.head}>Make limits stick</Text>
+          <Text style={s.head}>Make limits stick 🛡️</Text>
           <Text style={s.sub}>
             Two permissions let FocusLens show the block screen and keep running
             when your phone is locked. You can always grant these later in Settings.
@@ -225,7 +225,7 @@ export default function OnboardingScreen({
           </View>
 
           <Pressable style={[s.btn, s.btnLetsGo]} onPress={onComplete}>
-            <Text style={s.btnText}>Let's go →</Text>
+            <Text style={s.btnText}>Let's go 🚀</Text>
           </Pressable>
         </>
       )}

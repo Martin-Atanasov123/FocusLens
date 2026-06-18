@@ -71,13 +71,13 @@ class BlockActivity : Activity() {
 
     private fun buildFocusSessionView(root: LinearLayout) {
         val openCount = intent.getIntExtra(EXTRA_OPEN_COUNT, 0)
-        root.addView(label("Do you really need\nthis right now?", 26f, "#1C1610", bold = true))
-        root.addView(body("Take a breath.", topPad = 16, botPad = 16))
+        root.addView(label("Do you really need\nthis right now? 🤔", 26f, "#1C1610", bold = true))
+        root.addView(body("🧘 Take a breath.", topPad = 16, botPad = 16))
         if (openCount > 0) {
             val times = if (openCount == 1) "time" else "times"
-            root.addView(eyebrow("Tried to open this $openCount $times today"))
+            root.addView(eyebrow("Opened this $openCount $times today"))
         }
-        root.addView(primaryBtn("Back to focus") { goHome() }.apply {
+        root.addView(primaryBtn("← Back to focus") { goHome() }.apply {
             (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(24)
         })
     }
@@ -102,8 +102,8 @@ class BlockActivity : Activity() {
 
         // Positive reframing: the limit is time they chose to protect
         root.addView(eyebrow("LIMIT REACHED"))
-        root.addView(label("You've reclaimed\n${limitMin} min today.", 26f, "#1C1610", bold = true, topPad = 12))
-        root.addView(label("$appLabel wants that back.", 16f, "#6B6256", topPad = 8))
+        root.addView(label("You've reclaimed\n${limitMin} min today. ✊", 26f, "#1C1610", bold = true, topPad = 12))
+        root.addView(label("$appLabel wants those minutes back.", 16f, "#6B6256", topPad = 8))
         root.addView(body("Used $usedMin min of $limitMin min$openStr", topPad = 8, botPad = 32))
 
         when {
@@ -111,27 +111,27 @@ class BlockActivity : Activity() {
                 // Joker window is open — show a live countdown, then let them in.
                 val cd = body("", topPad = 0, botPad = 24)
                 root.addView(cd)
-                root.addView(primaryBtn("Got it") { finish() })
+                root.addView(primaryBtn("Got it ✓") { finish() })
                 startJokerCountdown(pkg, cd)
             }
             !jokerUsed -> {
                 // Offer the once-a-day joker, but make them pause first.
-                val jokerBtn = primaryBtn("Use 5 more minutes") {
+                val jokerBtn = primaryBtn("⏱️ Use 5 more minutes") {
                     limitStore.activateJoker(pkg)
                     finish()
                 }
                 root.addView(jokerBtn)
-                root.addView(ghostBtn("I'm done for today") {
+                root.addView(ghostBtn("✅ I'm done for today") {
                     limitStore.markJokerExhausted(pkg)
                     goHome()
                 })
-                startJokerGate(jokerBtn, "Use 5 more minutes")
+                startJokerGate(jokerBtn, "⏱️ Use 5 more minutes")
             }
             else -> {
                 // Joker spent or declined — hard block for the rest of the day.
-                root.addView(body("That's your limit for today.\nSee you tomorrow.",
+                root.addView(body("That's your limit for today. 🌙\nSee you tomorrow.",
                     topPad = 0, botPad = 24))
-                root.addView(primaryBtn("I'm done for today") { goHome() })
+                root.addView(primaryBtn("✅ I'm done for today") { goHome() })
             }
         }
     }
@@ -144,7 +144,7 @@ class BlockActivity : Activity() {
             var remaining = JOKER_GATE_SECONDS
             override fun run() {
                 if (remaining > 0) {
-                    button.text = "Take a breath… $remaining"
+                    button.text = "🌬️ Take a breath… $remaining"
                     remaining--
                     handler.postDelayed(this, 1000)
                 } else {
@@ -166,7 +166,7 @@ class BlockActivity : Activity() {
             override fun run() {
                 val remSec = ((end - System.currentTimeMillis()) / 1000).coerceAtLeast(0L)
                 if (remSec <= 0L) { goHome(); return }
-                view.text = "Extra time: %d:%02d left".format(remSec / 60, remSec % 60)
+                view.text = "⏳ Extra time: %d:%02d left".format(remSec / 60, remSec % 60)
                 handler.postDelayed(this, 1000)
             }
         }
