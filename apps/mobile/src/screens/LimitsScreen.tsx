@@ -16,12 +16,13 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { C } from "../theme";
 import { AppIcon, useAppIcons } from "../components/AppIcon";
+import BottomNav, { NavTab } from "../components/BottomNav";
 import { AppLimit, getAppLimits, removeAppLimit, setAppLimit } from "../blocking/rules";
-import { todayUsageSeconds } from "../sync";
+import { loadAllApps, PickableApp } from "../appList";
 import { FREE_LIMIT_MAX } from "../paywall/config";
 
 type Step = "list" | "pick-app" | "pick-time";
-type AppRow = { key: string; label: string; secs: number };
+type AppRow = PickableApp;
 
 const LIMIT_PRESETS_MIN = [15, 30, 60, 120];
 
@@ -45,6 +46,7 @@ export default function LimitsScreen({
   isPro = false,
   onRequestUpgrade,
   startAt = "list",
+  onNavigate,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -53,6 +55,8 @@ export default function LimitsScreen({
   onRequestUpgrade?: () => void;
   /** Step to land on when opened — "pick-app" deep-links straight into "add limit". */
   startAt?: Step;
+  /** Bottom-nav navigation to Home / Timer (My Apps is this screen). */
+  onNavigate?: (tab: NavTab) => void;
 }) {
   const [limits, setLimits] = useState<AppLimit[]>([]);
   const [apps, setApps] = useState<AppRow[]>([]);
@@ -63,20 +67,23 @@ export default function LimitsScreen({
   const [customInput, setCustomInput] = useState("30");
   const [saving, setSaving] = useState(false);
   const [expandedPkg, setExpandedPkg] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const appIcons = useAppIcons([
     ...limits.map((l) => l.packageName),
-    ...apps.map((a) => a.key),
+    // Only the first 40 rows are ever on screen at once; fetching every
+    // installed app's icon up front would be wasteful.
+    ...apps.slice(0, 40).map((a) => a.key),
   ]);
 
   const load = useCallback(async () => {
-    const [lims, usage] = await Promise.all([
+    const [lims, allApps] = await Promise.all([
       getAppLimits(),
-      todayUsageSeconds().catch(() => [] as AppRow[]),
+      loadAllApps().catch(() => [] as AppRow[]),
     ]);
     setLimits(lims);
     const limitedPkgs = new Set(lims.map((l) => l.packageName));
-    setApps((usage as AppRow[]).filter((a) => !limitedPkgs.has(a.key)));
+    setApps(allApps.filter((a) => !limitedPkgs.has(a.key)));
   }, []);
 
   useEffect(() => {
@@ -84,9 +91,14 @@ export default function LimitsScreen({
       load();
       setStep(startAt);
       setExpandedPkg(null);
+      setSearch("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, load]);
+
+  const filteredApps = search.trim()
+    ? apps.filter((a) => a.label.toLowerCase().includes(search.trim().toLowerCase()))
+    : apps;
 
   const canAddMore = isPro || limits.length < FREE_LIMIT_MAX;
 
@@ -205,6 +217,7 @@ export default function LimitsScreen({
             data={limits}
             keyExtractor={(l) => l.packageName}
             style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 108 }}
             ListEmptyComponent={
               <View style={s.emptyWrap}>
                 <Text style={s.emptyHead}>No limits yet</Text>
@@ -306,39 +319,56 @@ export default function LimitsScreen({
 
         {/* Step: pick app */}
         {step === "pick-app" && (
-          <FlatList
-            data={apps}
-            keyExtractor={(a) => a.key}
-            style={{ flex: 1 }}
-            ListHeaderComponent={
-              <Text style={s.pickerHint}>
-                Pick an app to set a daily screen-time cap.
-              </Text>
-            }
-            ListEmptyComponent={
-              <Text style={s.empty}>
-                No tracked apps yet. Use your phone for a bit, then come back.
-              </Text>
-            }
-            renderItem={({ item }) => (
-              <Pressable
-                style={s.appRow}
-                onPress={() => {
-                  setSelectedApp(item);
-                  setStep("pick-time");
-                }}
-              >
-                <AppIcon uri={appIcons[item.key]} label={item.label} size={36} />
-                <View style={s.appRowLeft}>
-                  <Text style={s.appRowLabel} numberOfLines={1}>
-                    {item.label}
-                  </Text>
-                  <Text style={s.appRowSecs}>{fmtSecs(item.secs)} today</Text>
-                </View>
-                <Text style={s.chevron}>›</Text>
-              </Pressable>
-            )}
-          />
+          <>
+            <View style={s.searchBar}>
+              <Ionicons name="search" size={17} color={C.ink3} />
+              <TextInput
+                style={s.searchInput}
+                placeholder="Search apps"
+                placeholderTextColor={C.ink3}
+                value={search}
+                onChangeText={setSearch}
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {search.length > 0 && (
+                <Pressable onPress={() => setSearch("")} hitSlop={10}>
+                  <Ionicons name="close-circle" size={17} color={C.ink3} />
+                </Pressable>
+              )}
+            </View>
+            <FlatList
+              data={filteredApps}
+              keyExtractor={(a) => a.key}
+              style={{ flex: 1 }}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <Text style={s.empty}>
+                  {search.trim() ? `No apps match "${search.trim()}".` : "Loading your apps…"}
+                </Text>
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  style={s.appRow}
+                  onPress={() => {
+                    setSelectedApp(item);
+                    setStep("pick-time");
+                  }}
+                >
+                  <AppIcon uri={appIcons[item.key]} label={item.label} size={36} />
+                  <View style={s.appRowLeft}>
+                    <Text style={s.appRowLabel} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                    <Text style={s.appRowSecs}>
+                      {item.secs > 0 ? `${fmtSecs(item.secs)} today` : "Not used today"}
+                    </Text>
+                  </View>
+                  <Text style={s.chevron}>›</Text>
+                </Pressable>
+              )}
+            />
+          </>
         )}
 
         {/* Step: pick time */}
@@ -402,6 +432,18 @@ export default function LimitsScreen({
               </Text>
             </Pressable>
           </View>
+        )}
+
+        {/* Persistent bottom nav — only on the top-level list, active = My Apps */}
+        {step === "list" && onNavigate && (
+          <BottomNav
+            active="myapps"
+            onNavigate={(tab) => {
+              if (tab === "myapps") return;
+              handleClose();
+              onNavigate(tab);
+            }}
+          />
         )}
       </View>
     </Modal>
@@ -551,6 +593,24 @@ const s = StyleSheet.create({
     fontSize: 13,
     marginBottom: 14,
     marginTop: 4,
+  },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: C.glass,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    color: C.ink,
+    fontSize: 15,
+    padding: 0,
   },
   appRow: {
     flexDirection: "row",

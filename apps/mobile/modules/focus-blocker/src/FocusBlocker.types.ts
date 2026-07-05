@@ -59,4 +59,6 @@ export interface FocusBlockerNativeModule {
   getOpenCountToday(ruleId: string, packageName: string): number;
   /** Launcher icons as base64 PNG data-URIs, keyed by package (missing = no icon). */
   getAppIcons(packageNames: string[]): Promise<Record<string, string>>;
+  /** Every launchable installed app as {packageName, appName}, sorted by label. */
+  getInstalledApps(): Promise<{ packageName: string; appName: string }[]>;
 }

@@ -78,32 +78,57 @@ _FW_ARGS = (
 )
 
 
-def firewall_rule_exists() -> bool:
+def _fw_rule_exists(name: str) -> bool:
     if sys.platform != "win32":
         return True
     import subprocess
     try:
         out = subprocess.run(
-            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={_FW_RULE}"],
+            ["netsh", "advfirewall", "firewall", "show", "rule", f"name={name}"],
             capture_output=True, text=True, timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        return _FW_RULE in out.stdout
+        return name in out.stdout
     except Exception:
         return False
 
 
+def _fw_add_elevated(args: str) -> None:
+    """Run a netsh command elevated (one UAC prompt). Fire-and-forget."""
+    import ctypes
+    ctypes.windll.shell32.ShellExecuteW(None, "runas", "netsh", args, None, 0)
+
+
+def firewall_rule_exists() -> bool:
+    return _fw_rule_exists(_FW_RULE)
+
+
 def ensure_firewall_rule() -> None:
-    """Add the inbound LAN rule via a single elevated netsh call (one UAC
-    prompt). No-op if the rule already exists or we're not on Windows."""
-    if sys.platform != "win32" or firewall_rule_exists():
+    """Add the inbound LAN rule (one UAC prompt). No-op if rule exists."""
+    if sys.platform != "win32" or _fw_rule_exists(_FW_RULE):
         return
     try:
-        import ctypes
-        # "runas" shows the UAC consent dialog; netsh then adds the rule.
-        ctypes.windll.shell32.ShellExecuteW(None, "runas", "netsh", _FW_ARGS, None, 0)
+        _fw_add_elevated(_FW_ARGS)
     except Exception as e:
         print(f"[FocusLens] firewall auto-add failed: {e}")
+
+
+_CF_RULE = "FocusLens-cloudflared"
+
+
+def ensure_cloudflared_firewall_rule(exe_path: str) -> None:
+    """Add a program-based inbound rule for cloudflared.exe (one UAC prompt).
+    Stops Windows Firewall from asking about cloudflared on every launch."""
+    if sys.platform != "win32" or _fw_rule_exists(_CF_RULE):
+        return
+    try:
+        args = (
+            f'advfirewall firewall add rule name="{_CF_RULE}" dir=in '
+            f'action=allow program="{exe_path}" enable=yes'
+        )
+        _fw_add_elevated(args)
+    except Exception as e:
+        print(f"[FocusLens] cloudflared firewall rule failed: {e}")
 
 
 def _build_icon():
@@ -179,6 +204,14 @@ def main() -> None:
             print("[FocusLens] remote access disabled")
         else:
             store.set_setting("remote_enabled", "1")
+            # Add cloudflared firewall rule the first time remote is enabled
+            # so Windows stops prompting about cloudflared.exe.
+            if store.get_setting("cloudflared_fw_done") is None:
+                from agent.tunnel import find_cloudflared
+                cf_exe = find_cloudflared()
+                if cf_exe:
+                    store.set_setting("cloudflared_fw_done", "1")
+                    ensure_cloudflared_firewall_rule(cf_exe)
             try:
                 url = tunnel.start()
                 print(f"[FocusLens] remote access enabled — {url}")
@@ -227,6 +260,13 @@ def main() -> None:
         store.set_setting("first_run_done", "1")
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{PORT}/")).start()
 
+    # Validate autostart: if the registered exe no longer exists, remove the
+    # stale Run key — prevents Windows from showing "how to open this file"
+    # or a Python install dialog on every login.
+    if sys.platform == "win32" and is_autostart_enabled() and _autostart_target() is None:
+        set_autostart(False)
+        print("[FocusLens] stale autostart entry removed")
+
     # Register FocusLens to start with Windows so tracking is always on. Targets
     # the built .exe (see _autostart_target); a no-op when no .exe is found.
     # Tracked separately from first_run so existing installs get it once too;
@@ -242,13 +282,19 @@ def main() -> None:
         store.set_setting("firewall_init", "1")
         ensure_firewall_rule()
 
-    # Remote access defaults on (opt-out via the tray). Start the tunnel in the
-    # background — the cloudflared handshake can take ~20s and must not block the
-    # tray. The phone re-reads the (ephemeral) tunnel URL from /api/network-info
-    # while on the LAN, so a changing trycloudflare address self-heals.
+    # Remote access is opt-in (enable from the tray). Default is OFF so
+    # cloudflared.exe doesn't trigger Windows Firewall on every startup.
     if store.get_setting("remote_init") is None:
         store.set_setting("remote_init", "1")
-        store.set_setting("remote_enabled", "1")
+        store.set_setting("remote_enabled", "0")
+
+    # Migration for existing installs: if cloudflared was never explicitly
+    # confirmed (no firewall rule added), turn off auto-start so the Windows
+    # Firewall dialog stops appearing. The user can re-enable from the tray.
+    if store.get_setting("cloudflared_fw_done") is None and \
+            store.get_setting("remote_enabled") == "1":
+        store.set_setting("remote_enabled", "0")
+        print("[FocusLens] remote access paused — re-enable from tray if needed")
 
     def _auto_start_tunnel():
         try:

@@ -192,3 +192,14 @@ export async function getAppIcons(
     return {};
   }
 }
+
+/** Every launchable installed app, sorted by label (excludes FocusLens itself). */
+export async function getInstalledApps(): Promise<
+  { packageName: string; appName: string }[]
+> {
+  try {
+    return await FocusBlockerModule.getInstalledApps();
+  } catch {
+    return [];
+  }
+}

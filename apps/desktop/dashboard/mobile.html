@@ -9,16 +9,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="FocusLens"/>
-<meta name="theme-color" content="#B26A0A"/>
+<meta name="theme-color" content="#A9EEC8"/>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,200;9..144,400&family=DM+Mono:wght@400&family=Figtree:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F2EDE3;--surf:#E9E3D7;--surf-2:#E0D9CB;
-  --border:rgba(24,18,8,.09);--ink:#1C1610;--ink-2:#6B6256;--ink-3:#A8A098;
-  --amber:#B26A0A;--green:#1D6B3F;--red:#B5280A;
+  /* Dark mint palette — matches the mobile app + desktop dashboard. */
+  --bg:#070A08;--surf:#141A16;--surf-2:#1E2521;
+  --border:rgba(255,255,255,.08);--ink:#F2F6F3;--ink-2:rgba(242,246,243,.64);--ink-3:rgba(242,246,243,.40);
+  --amber:#A9EEC8;--on-accent:#08130C;--green:#7DE8A9;--red:#F08573;
 }
 html{font-size:16px}
 body{
@@ -202,7 +203,7 @@ async function load() {
     const f = document.getElementById('g-fill');
     const pct = GOAL_H > 0 ? (d.totalActiveSecs/(GOAL_H*3600))*100 : 0;
     f.style.strokeDashoffset = ARC*(1-Math.min(1,pct/100));
-    f.style.stroke = pct>=100?'#B5280A':pct>=80?'#C4890A':'#B26A0A';
+    f.style.stroke = pct>=100?'#F08573':pct>=80?'#F5B96B':'#A9EEC8';
     document.getElementById('g-pct').textContent = Math.round(pct)+'%';
     document.getElementById('ldot').style.background = '#1D6B3F';
     renderList('apps-list', d.apps, false, 'No desktop activity yet.');

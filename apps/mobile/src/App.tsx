@@ -48,6 +48,7 @@ import { computeScore, saveScoreSnapshot } from "./gamification/score";
 import { notifyGemUnlocked, syncStreakReminder } from "./notifications";
 import { AppIcon, useAppIcons } from "./components/AppIcon";
 import { FadeInView, PressableScale } from "./components/Motion";
+import BottomNav from "./components/BottomNav";
 
 // Smooth layout transitions (list growth, expand/collapse) on Android.
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -76,8 +77,11 @@ import {
 type UsageRow = { key: string; label: string; secs: number };
 
 function fmt(secs: number): string {
-  const h = Math.floor(secs / 3600);
-  const m = Math.floor((secs % 3600) / 60);
+  // Round to the nearest minute so totals line up with Android Digital
+  // Wellbeing (it rounds; truncating showed every app ~1 min short).
+  const totalMin = Math.round(secs / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
   if (h && m) return `${h}h ${m}m`;
   if (h) return `${h}h`;
   if (m) return `${m}m`;
@@ -135,6 +139,8 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
+  // "pick-app" deep-links straight into the add-limit flow (from the Rules picker).
+  const [limitsStartAt, setLimitsStartAt] = useState<"list" | "pick-app">("list");
   const [schedulesOpen, setSchedulesOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false); // fallback custom paywall
@@ -800,23 +806,14 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* Bottom pill navigation (Opal style): Home · My Apps · Timer */}
-      <View style={s.nav} pointerEvents="box-none">
-        <View style={s.navPill}>
-          <Pressable style={[s.navItem, s.navItemActive]}>
-            <Ionicons name="ellipse-outline" size={18} color={C.ink} />
-            <Text style={[s.navLabel, s.navLabelActive]}>Home</Text>
-          </Pressable>
-          <Pressable style={s.navItem} onPress={() => setLimitsOpen(true)}>
-            <Ionicons name="apps" size={18} color={C.ink3} />
-            <Text style={s.navLabel}>My Apps</Text>
-          </Pressable>
-          <Pressable style={s.navItem} onPress={() => setFocusOpen(true)}>
-            <Ionicons name="play" size={18} color={C.ink3} />
-            <Text style={s.navLabel}>Timer</Text>
-          </Pressable>
-        </View>
-      </View>
+      {/* Persistent bottom navigation with a sliding indicator. */}
+      <BottomNav
+        active="home"
+        onNavigate={(tab) => {
+          if (tab === "myapps") setLimitsOpen(true);
+          else if (tab === "timer") setFocusOpen(true);
+        }}
+      />
 
       <FocusScreen
         visible={focusOpen}
@@ -824,18 +821,35 @@ export default function App() {
           setFocusOpen(false);
           refresh(); // pick up streak credit from a just-finished session
         }}
+        onNavigate={(tab) => {
+          // FocusScreen already closed itself; just open the target surface.
+          if (tab === "myapps") setLimitsOpen(true);
+        }}
       />
       <LimitsScreen
         visible={limitsOpen}
-        onClose={() => setLimitsOpen(false)}
+        onClose={() => {
+          setLimitsOpen(false);
+          setLimitsStartAt("list");
+        }}
         isPro={isPro}
         onRequestUpgrade={openPaywall}
+        startAt={limitsStartAt}
+        onNavigate={(tab) => {
+          // LimitsScreen already closed itself; just open the target surface.
+          if (tab === "timer") setFocusOpen(true);
+        }}
       />
       <SchedulesScreen
         visible={schedulesOpen}
         onClose={() => setSchedulesOpen(false)}
         isPro={isPro}
         onRequestUpgrade={openPaywall}
+        onRequestTimeLimit={() => {
+          setSchedulesOpen(false);
+          setLimitsStartAt("pick-app");
+          setLimitsOpen(true);
+        }}
       />
       <ProfileScreen
         visible={profileOpen}

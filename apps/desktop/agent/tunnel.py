@@ -20,6 +20,10 @@ from pathlib import Path
 _URL_RE = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com")
 
 
+def find_cloudflared() -> str | None:
+    return _find_cloudflared()
+
+
 def _find_cloudflared() -> str | None:
     # 1) next to the (frozen) executable / project root
     candidates = []

@@ -12,17 +12,20 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root{
-  --bg:#F2EDE3;
-  --surf:#E9E3D7;
-  --surf-2:#E0D9CB;
-  --border:rgba(24,18,8,.09);
-  --ink:#1C1610;
-  --ink-2:#6B6256;
-  --ink-3:#A8A098;
-  --amber:#B26A0A;
-  --amber-bg:#F9EDDB;
-  --green:#1D6B3F;
-  --red:#B5280A;
+  /* Dark "premium blocker" palette — matches the mobile app (Opal-inspired).
+     --amber is the mint accent slot; --on-accent is dark text placed on it. */
+  --bg:#070A08;
+  --surf:#141A16;
+  --surf-2:#1E2521;
+  --border:rgba(255,255,255,.08);
+  --ink:#F2F6F3;
+  --ink-2:rgba(242,246,243,.64);
+  --ink-3:rgba(242,246,243,.40);
+  --amber:#A9EEC8;
+  --amber-bg:rgba(169,238,200,.10);
+  --on-accent:#08130C;
+  --green:#7DE8A9;
+  --red:#F08573;
   --r:8px;
 }
 
@@ -38,7 +41,7 @@ body{
 body::before{
   content:'';
   position:fixed;inset:0;
-  background-image:radial-gradient(circle,rgba(24,18,8,.07) 1px,transparent 1px);
+  background-image:radial-gradient(circle,rgba(255,255,255,.035) 1px,transparent 1px);
   background-size:28px 28px;
   pointer-events:none;z-index:0;
 }
@@ -639,7 +642,7 @@ function setGauge(pct) {
   const f = document.getElementById('g-fill');
   const l = document.getElementById('g-pct');
   f.style.strokeDashoffset = ARC * (1 - Math.min(1, pct/100));
-  f.style.stroke = pct>=100 ? 'var(--red)' : pct>=80 ? '#C4890A' : 'var(--amber)';
+  f.style.stroke = pct>=100 ? 'var(--red)' : pct>=80 ? '#F5B96B' : 'var(--amber)';
   l.textContent = Math.round(pct)+'%';
 }
 
@@ -744,7 +747,7 @@ function renderScore(score) {
   chip.style.display = 'inline-flex';
   document.getElementById('score-txt').textContent = 'Focus score ' + score;
   document.getElementById('score-dot').style.background =
-    score >= 65 ? 'var(--green)' : score >= 40 ? '#C4890A' : 'var(--red)';
+    score >= 65 ? 'var(--green)' : score >= 40 ? '#F5B96B' : 'var(--red)';
 }
 
 let _src = 'desktop';
@@ -965,7 +968,7 @@ async function loadLimits() {
     } else {
       el.innerHTML = lims.map(l=>{
         const p = Math.min(100,(l.usedSecsToday/l.limit_secs)*100);
-        const c = p>=100?'var(--red)':p>=80?'#C4890A':'var(--green)';
+        const c = p>=100?'var(--red)':p>=80?'#F5B96B':'var(--green)';
         return `<div class="lim-card">
           <div class="lim-r">
             <span class="lim-key">${l.target_key}</span>
@@ -1144,7 +1147,7 @@ function renderQR() {
   if (typeof QRCode !== 'undefined') {
     new QRCode(el, {
       text: payload, width: 210, height: 210,
-      colorDark: '#1C1610', colorLight: '#F2EDE3',
+      colorDark: '#08130C', colorLight: '#FFFFFF',
       correctLevel: QRCode.CorrectLevel.H
     });
   } else {

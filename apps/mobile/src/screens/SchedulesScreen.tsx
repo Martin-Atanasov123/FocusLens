@@ -38,7 +38,7 @@ import {
   setScheduleEnabled,
   setScheduleRule,
 } from "../blocking/FocusBlocker";
-import { todayUsageSeconds } from "../sync";
+import { loadAllApps } from "../appList";
 import { FREE_RULE_MAX } from "../paywall/config";
 
 type AppRow = { key: string; label: string };
@@ -162,9 +162,10 @@ export default function SchedulesScreen({
   const [draft, setDraft] = useState<ScheduleRule>(newScheduleDraft());
   const [isNew, setIsNew] = useState(true);
   const [openCounts, setOpenCounts] = useState<Record<string, number>>({});
+  const [appSearch, setAppSearch] = useState("");
 
   const appIcons = useAppIcons([
-    ...apps.map((a) => a.key),
+    ...apps.slice(0, 40).map((a) => a.key),
     ...rules.flatMap((r) => r.packageNames),
   ]);
 
@@ -172,8 +173,8 @@ export default function SchedulesScreen({
     const rs = getScheduleRules();
     setRules(rs);
     try {
-      const usage = await todayUsageSeconds();
-      setApps(usage.map((u) => ({ key: u.key, label: u.label })));
+      const all = await loadAllApps();
+      setApps(all.map((u) => ({ key: u.key, label: u.label })));
     } catch {
       setApps([]);
     }
@@ -215,6 +216,7 @@ export default function SchedulesScreen({
     }
     setDraft(type === "schedule" ? newScheduleDraft() : newOpenLimitDraft());
     setIsNew(true);
+    setAppSearch("");
     setStep("edit");
   };
 
@@ -227,6 +229,7 @@ export default function SchedulesScreen({
     if (!viewing) return;
     setDraft({ ...viewing });
     setIsNew(false);
+    setAppSearch("");
     setStep("edit");
   };
 
@@ -519,21 +522,44 @@ export default function SchedulesScreen({
                   {draft.type === "openLimit" ? "For these apps" : "Apps are blocked"}
                 </Text>
               </View>
-              {apps.length === 0 && draft.packageNames.length === 0 && (
-                <Text style={s.emptySub}>No tracked apps yet. Use your phone a bit, then come back.</Text>
-              )}
-              {apps.map((a) => {
-                const on = draft.packageNames.includes(a.key);
-                return (
-                  <Pressable key={a.key} style={s.appRow} onPress={() => toggleApp(a.key)}>
-                    <View style={[s.check, on && s.checkOn]}>
-                      {on && <Ionicons name="checkmark" size={15} color={C.onAccent} />}
-                    </View>
-                    <AppIcon uri={appIcons[a.key]} label={a.label} size={32} />
-                    <Text style={s.appLabel} numberOfLines={1}>{a.label}</Text>
+              <View style={s.searchBar}>
+                <Ionicons name="search" size={16} color={C.ink3} />
+                <TextInput
+                  style={s.searchInput}
+                  placeholder="Search apps"
+                  placeholderTextColor={C.ink3}
+                  value={appSearch}
+                  onChangeText={setAppSearch}
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                {appSearch.length > 0 && (
+                  <Pressable onPress={() => setAppSearch("")} hitSlop={10}>
+                    <Ionicons name="close-circle" size={16} color={C.ink3} />
                   </Pressable>
-                );
-              })}
+                )}
+              </View>
+              {apps.length === 0 && draft.packageNames.length === 0 && (
+                <Text style={s.emptySub}>Loading your apps…</Text>
+              )}
+              {apps
+                .filter((a) =>
+                  appSearch.trim()
+                    ? a.label.toLowerCase().includes(appSearch.trim().toLowerCase())
+                    : true
+                )
+                .map((a) => {
+                  const on = draft.packageNames.includes(a.key);
+                  return (
+                    <Pressable key={a.key} style={s.appRow} onPress={() => toggleApp(a.key)}>
+                      <View style={[s.check, on && s.checkOn]}>
+                        {on && <Ionicons name="checkmark" size={15} color={C.onAccent} />}
+                      </View>
+                      <AppIcon uri={appIcons[a.key]} label={a.label} size={32} />
+                      <Text style={s.appLabel} numberOfLines={1}>{a.label}</Text>
+                    </Pressable>
+                  );
+                })}
 
               <Pressable style={s.strictRow} onPress={toggleStrict}>
                 <View style={{ flex: 1 }}>
@@ -758,6 +784,12 @@ const s = StyleSheet.create({
   dayChipText: { color: C.ink2, fontSize: 13, fontWeight: "700" },
   dayChipTextOn: { color: C.onAccent },
 
+  searchBar: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.surf, borderWidth: 1, borderColor: C.border,
+    borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, marginBottom: 10,
+  },
+  searchInput: { flex: 1, color: C.ink, fontSize: 15, padding: 0 },
   appRow: {
     flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12,
     borderBottomWidth: 1, borderBottomColor: C.border,

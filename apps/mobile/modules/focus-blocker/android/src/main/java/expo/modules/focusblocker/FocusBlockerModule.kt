@@ -136,6 +136,29 @@ class FocusBlockerModule : Module() {
             }.toMap()
         }
 
+        // ---- Installed apps --------------------------------------------------
+
+        // Every launchable app (has a launcher icon), as {packageName, appName},
+        // sorted by label. Async — resolving labels for 100+ apps is slow.
+        // Excludes this app so users can't limit FocusLens itself.
+        AsyncFunction("getInstalledApps") {
+            val pm = context.packageManager
+            val launchers = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val resolved = pm.queryIntentActivities(launchers, 0)
+            resolved
+                .mapNotNull { ri ->
+                    val pkg = ri.activityInfo?.packageName ?: return@mapNotNull null
+                    if (pkg == context.packageName) return@mapNotNull null
+                    val label = try {
+                        ri.loadLabel(pm).toString()
+                    } catch (e: Exception) { pkg }
+                    pkg to label
+                }
+                .distinctBy { it.first }
+                .sortedBy { it.second.lowercase() }
+                .map { mapOf("packageName" to it.first, "appName" to it.second) }
+        }
+
         // ---- Scheduled rules -------------------------------------------------
 
         Function("setScheduleRule") { rule: Map<String, Any?> ->

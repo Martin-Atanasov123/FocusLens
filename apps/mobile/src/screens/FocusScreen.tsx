@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
 import { C, CTA_GRADIENT } from "../theme";
+import BottomNav, { NavTab } from "../components/BottomNav";
 import { AppIcon, useAppIcons } from "../components/AppIcon";
 import { PressableScale } from "../components/Motion";
 import {
@@ -65,9 +66,12 @@ function durationLabel(minutes: number): string {
 export default function FocusScreen({
   visible,
   onClose,
+  onNavigate,
 }: {
   visible: boolean;
   onClose: () => void;
+  /** Bottom-nav navigation to Home / My Apps (Timer is this screen). */
+  onNavigate?: (tab: NavTab) => void;
 }) {
   const [apps, setApps] = useState<AppRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -242,6 +246,7 @@ export default function FocusScreen({
               data={apps}
               keyExtractor={(a) => a.key}
               showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 108 }}
               ListEmptyComponent={
                 <Text style={s.empty}>
                   No tracked apps yet. Use your phone a bit, then come back.
@@ -263,6 +268,18 @@ export default function FocusScreen({
               }}
             />
           </>
+        )}
+
+        {/* Persistent bottom nav, active = Timer */}
+        {onNavigate && (
+          <BottomNav
+            active="timer"
+            onNavigate={(tab) => {
+              if (tab === "timer") return;
+              onClose();
+              onNavigate(tab);
+            }}
+          />
         )}
       </View>
     </Modal>

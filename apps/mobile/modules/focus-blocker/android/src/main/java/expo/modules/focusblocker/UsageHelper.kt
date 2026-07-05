@@ -24,13 +24,19 @@ object UsageHelper {
     /**
      * Returns raw foreground milliseconds per package since [startMs].
      *
-     * SINGLE-FOREGROUND model (matches Digital Wellbeing): exactly one package
-     * is "in front" at any moment. A RESUMED event for package X implicitly
-     * closes the interval of whatever was in front before — this is critical
-     * for apps like AnyDesk/remote-desktop/overlay apps that fire RESUMED but
-     * never a matching PAUSED, which would otherwise count the entire day.
-     * Screen-off pauses the clock; screen-on resumes it for the same package.
-     * Total across all apps can never exceed wall-clock time.
+     * SINGLE-FOREGROUND model (matches Digital Wellbeing): exactly one package is
+     * "in front" at any moment. A RESUMED (MOVE_TO_FOREGROUND) event for package X
+     * implicitly closes the interval of whatever was in front before. This caps
+     * apps like AnyDesk/remote-desktop that fire RESUMED but often no matching
+     * PAUSED — the next app switch closes them, so a stale RESUMED can never run
+     * away and count the whole day.
+     *
+     * We deliberately do NOT gate on SCREEN_INTERACTIVE/NON_INTERACTIVE: apps that
+     * stay genuinely foreground while the physical screen is off (remote control,
+     * casting) are counted by Digital Wellbeing, so we count them too. Normal apps
+     * still close correctly because Android emits ACTIVITY_PAUSED when the screen
+     * locks. Any lingering final interval is closed at `now` (that app really is in
+     * front right now), so the total can never exceed wall-clock time.
      */
     fun usageSinceMs(context: Context, startMs: Long): Map<String, Long> {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
@@ -54,20 +60,13 @@ object UsageHelper {
 
         var current: String? = pkgOpenAtStart      // package currently in front
         var currentStart: Long = startMs           // when its open interval began
-        var screenOn = true                        // assume interactive at startMs
 
         fun closeInterval(endTs: Long) {
             val pkg = current ?: return
-            if (screenOn && endTs > currentStart) {
+            if (endTs > currentStart) {
                 totals[pkg] = (totals[pkg] ?: 0L) + (endTs - currentStart)
             }
         }
-
-        // SCREEN_INTERACTIVE / SCREEN_NON_INTERACTIVE exist since API 28;
-        // minSdk is below that only in theory — guard by raw values (15/16)
-        // so this compiles against any compileSdk.
-        val screenInteractive = 15
-        val screenNonInteractive = 16
 
         val events = usm.queryEvents(startMs, now)
         val event = UsageEvents.Event()
@@ -88,15 +87,6 @@ object UsageHelper {
                         closeInterval(ts)
                         current = null
                     }
-                }
-                screenNonInteractive -> {                  // screen off: clock stops
-                    closeInterval(ts)
-                    screenOn = false
-                    currentStart = ts                      // keep pkg; restart on screen-on
-                }
-                screenInteractive -> {                     // screen on: clock resumes
-                    screenOn = true
-                    currentStart = ts
                 }
             }
         }
