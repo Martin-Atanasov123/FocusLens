@@ -6,6 +6,7 @@
  * every sync, so repeated syncs never double-count.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import * as Application from "expo-application";
 import * as Device from "expo-device";
 import * as IntentLauncher from "expo-intent-launcher";
@@ -26,7 +27,7 @@ export interface PairConfig {
 }
 
 export async function loadConfig(): Promise<PairConfig | null> {
-  const raw = await AsyncStorage.getItem("fl_config");
+  const raw = await SecureStore.getItemAsync("fl_config");
   return raw ? JSON.parse(raw) : null;
 }
 
@@ -82,7 +83,7 @@ export async function pingDesktop(baseUrl: string): Promise<boolean> {
 }
 
 export async function saveConfig(cfg: PairConfig): Promise<void> {
-  await AsyncStorage.setItem("fl_config", JSON.stringify(cfg));
+  await SecureStore.setItemAsync("fl_config", JSON.stringify(cfg));
 }
 
 export async function hasUsagePermission(): Promise<boolean> {

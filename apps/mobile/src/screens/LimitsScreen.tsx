@@ -3,6 +3,7 @@ import {
   Alert,
   FlatList,
   Keyboard,
+  LayoutAnimation,
   Modal,
   Pressable,
   StyleSheet,
@@ -11,7 +12,10 @@ import {
   View,
 } from "react-native";
 
+import { Ionicons } from "@expo/vector-icons";
+
 import { C } from "../theme";
+import { AppIcon, useAppIcons } from "../components/AppIcon";
 import { AppLimit, getAppLimits, removeAppLimit, setAppLimit } from "../blocking/rules";
 import { todayUsageSeconds } from "../sync";
 import { FREE_LIMIT_MAX } from "../paywall/config";
@@ -40,12 +44,15 @@ export default function LimitsScreen({
   onClose,
   isPro = false,
   onRequestUpgrade,
+  startAt = "list",
 }: {
   visible: boolean;
   onClose: () => void;
   isPro?: boolean;
   /** Called when a free user tries to exceed the limit cap — opens the paywall. */
   onRequestUpgrade?: () => void;
+  /** Step to land on when opened — "pick-app" deep-links straight into "add limit". */
+  startAt?: Step;
 }) {
   const [limits, setLimits] = useState<AppLimit[]>([]);
   const [apps, setApps] = useState<AppRow[]>([]);
@@ -56,6 +63,11 @@ export default function LimitsScreen({
   const [customInput, setCustomInput] = useState("30");
   const [saving, setSaving] = useState(false);
   const [expandedPkg, setExpandedPkg] = useState<string | null>(null);
+
+  const appIcons = useAppIcons([
+    ...limits.map((l) => l.packageName),
+    ...apps.map((a) => a.key),
+  ]);
 
   const load = useCallback(async () => {
     const [lims, usage] = await Promise.all([
@@ -70,9 +82,10 @@ export default function LimitsScreen({
   useEffect(() => {
     if (visible) {
       load();
-      setStep("list");
+      setStep(startAt);
       setExpandedPkg(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, load]);
 
   const canAddMore = isPro || limits.length < FREE_LIMIT_MAX;
@@ -153,7 +166,7 @@ export default function LimitsScreen({
   };
 
   const stepTitle = step === "list"
-    ? "Daily Limits"
+    ? "My Apps"
     : step === "pick-app"
     ? "Choose App"
     : editTarget
@@ -169,7 +182,21 @@ export default function LimitsScreen({
             <Text style={s.back}>{step === "list" ? "‹ Close" : "‹ Back"}</Text>
           </Pressable>
           <Text style={s.title}>{stepTitle}</Text>
-          <View style={{ width: 52 }} />
+          {step === "list" ? (
+            <Pressable
+              style={[s.addFab, !canAddMore && s.addFabLocked]}
+              onPress={openAdd}
+              hitSlop={8}
+            >
+              <Ionicons
+                name={canAddMore ? "add" : "lock-closed"}
+                size={canAddMore ? 24 : 17}
+                color={canAddMore ? C.onAccent : C.ink2}
+              />
+            </Pressable>
+          ) : (
+            <View style={{ width: 44 }} />
+          )}
         </View>
 
         {/* Step: list */}
@@ -208,33 +235,50 @@ export default function LimitsScreen({
               const expanded = expandedPkg === item.packageName;
               const p = usagePct(item.usedSecs, item.dailyLimitSecs);
               const exceeded = item.usedSecs >= item.dailyLimitSecs;
+              const leftSecs = Math.max(0, item.dailyLimitSecs - item.usedSecs);
               return (
                 <Pressable
-                  onPress={() =>
-                    setExpandedPkg(expanded ? null : item.packageName)
-                  }
+                  style={[s.limitCard, exceeded && s.limitCardBlocked]}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setExpandedPkg(expanded ? null : item.packageName);
+                  }}
                 >
-                  <View style={s.limitRow}>
-                    <View style={s.limitMeta}>
-                      <Text style={s.limitLabel} numberOfLines={1}>
-                        {item.label}
-                      </Text>
+                  <View style={s.limitTop}>
+                    <View style={[s.limitChip, exceeded && s.limitChipBlocked]}>
+                      {exceeded && (
+                        <Ionicons name="lock-closed" size={11} color={C.red} />
+                      )}
                       <Text
-                        style={[s.limitTime, exceeded && s.limitTimeRed]}
+                        style={[s.limitChipText, exceeded && s.limitChipTextBlocked]}
                       >
-                        {fmtSecs(item.usedSecs)} / {fmtSecs(item.dailyLimitSecs)}
-                        {item.jokerUsedToday ? " · +5m used" : ""}
+                        {exceeded ? "Blocked" : `${fmtSecs(leftSecs)} left`}
                       </Text>
                     </View>
-                    <View style={s.barTrack}>
-                      <View
-                        style={[
-                          s.barFill,
-                          { width: `${p * 100}%` },
-                          exceeded && s.barFillRed,
-                        ]}
-                      />
-                    </View>
+                    <Text style={s.limitTime}>
+                      {fmtSecs(item.usedSecs)} / {fmtSecs(item.dailyLimitSecs)}
+                      {item.jokerUsedToday ? " · +5m" : ""}
+                    </Text>
+                  </View>
+                  <View style={s.limitTitleRow}>
+                    <AppIcon
+                      uri={appIcons[item.packageName]}
+                      label={item.label}
+                      size={34}
+                      locked={exceeded}
+                    />
+                    <Text style={s.limitLabel} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                  </View>
+                  <View style={s.barTrack}>
+                    <View
+                      style={[
+                        s.barFill,
+                        { width: `${p * 100}%` },
+                        exceeded && s.barFillRed,
+                      ]}
+                    />
                   </View>
 
                   {expanded && (
@@ -284,6 +328,7 @@ export default function LimitsScreen({
                   setStep("pick-time");
                 }}
               >
+                <AppIcon uri={appIcons[item.key]} label={item.label} size={36} />
                 <View style={s.appRowLeft}>
                   <Text style={s.appRowLabel} numberOfLines={1}>
                     {item.label}
@@ -374,30 +419,64 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   back: { color: C.amber, fontSize: 16 },
-  title: { color: C.ink, fontSize: 18, fontWeight: "600" },
+  title: { color: C.ink, fontSize: 18, fontWeight: "700" },
 
-  // limit list
-  limitRow: {
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
+  // mint "+" fab in the header (Opal's Apps screen)
+  addFab: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: C.amber,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: C.amber,
+    shadowOpacity: 0.6,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  limitMeta: {
+  addFabLocked: { backgroundColor: C.surf2, shadowOpacity: 0 },
+
+  // limit cards (Rules-style)
+  limitCard: {
+    backgroundColor: C.glass,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 18,
+    marginBottom: 12,
+  },
+  limitCardBlocked: {
+    borderColor: "rgba(240,133,115,0.35)",
+    backgroundColor: "rgba(240,133,115,0.06)",
+  },
+  limitTop: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "baseline",
-    marginBottom: 8,
+    alignItems: "center",
+    marginBottom: 10,
   },
-  limitLabel: { color: C.ink, fontSize: 15, flex: 1, marginRight: 10 },
+  limitChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: C.glowFaint,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  limitChipBlocked: { backgroundColor: "rgba(240,133,115,0.15)" },
+  limitChipText: { color: C.amber, fontSize: 12, fontWeight: "700" },
+  limitChipTextBlocked: { color: C.red },
+  limitTitleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  limitLabel: { color: C.ink, fontSize: 17, fontWeight: "700", flex: 1 },
   limitTime: {
-    color: C.ink2,
+    color: C.ink3,
     fontSize: 12.5,
     fontVariant: ["tabular-nums"],
   },
-  limitTimeRed: { color: C.red },
   barTrack: {
     height: 4,
     backgroundColor: C.surf2,
@@ -410,9 +489,9 @@ const s = StyleSheet.create({
   // inline action row (expanded)
   actionRow: {
     flexDirection: "row",
-    backgroundColor: C.surf,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    marginTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
   },
   actionBtn: { flex: 1, paddingVertical: 13, alignItems: "center" },
   actionEdit: { color: C.amber, fontSize: 14, fontWeight: "600" },
@@ -449,7 +528,7 @@ const s = StyleSheet.create({
   addBtn: {
     backgroundColor: C.amber,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: "center",
   },
   addBtnLocked: {
@@ -457,7 +536,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
-  addBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  addBtnText: { color: C.onAccent, fontSize: 15, fontWeight: "700" },
   addBtnTextLocked: { color: C.ink2 },
   freeNote: {
     textAlign: "center",
@@ -476,6 +555,7 @@ const s = StyleSheet.create({
   appRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
@@ -503,15 +583,15 @@ const s = StyleSheet.create({
   preset: {
     flex: 1,
     paddingVertical: 16,
-    borderRadius: 10,
-    backgroundColor: C.surf,
+    borderRadius: 999,
+    backgroundColor: C.glass,
     alignItems: "center",
     borderWidth: 1,
     borderColor: C.border,
   },
   presetOn: { backgroundColor: C.amber, borderColor: C.amber },
   presetText: { color: C.ink2, fontSize: 15, fontWeight: "600" },
-  presetTextOn: { color: "#fff" },
+  presetTextOn: { color: C.onAccent },
 
   // custom minutes input
   customRow: {
@@ -525,7 +605,7 @@ const s = StyleSheet.create({
     backgroundColor: C.surf,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 10,
+    borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 22,
@@ -543,9 +623,9 @@ const s = StyleSheet.create({
   btn: {
     backgroundColor: C.amber,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: "center",
   },
   btnDisabled: { backgroundColor: C.ink3, opacity: 0.6 },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  btnText: { color: C.onAccent, fontSize: 16, fontWeight: "700" },
 });

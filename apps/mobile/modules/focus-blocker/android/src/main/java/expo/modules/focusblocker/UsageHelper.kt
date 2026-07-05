@@ -23,18 +23,21 @@ object UsageHelper {
 
     /**
      * Returns raw foreground milliseconds per package since [startMs].
-     * Uses MOVE_TO_FOREGROUND / MOVE_TO_BACKGROUND pairs (same as Digital Wellbeing)
-     * with all three edge-case fixes:
-     *   1. Orphan BACKGROUND (app started before our window)
-     *   2. App open at startMs with events in window
-     *   3. App open at startMs with NO events in window (5-min lookback)
+     *
+     * SINGLE-FOREGROUND model (matches Digital Wellbeing): exactly one package
+     * is "in front" at any moment. A RESUMED event for package X implicitly
+     * closes the interval of whatever was in front before — this is critical
+     * for apps like AnyDesk/remote-desktop/overlay apps that fire RESUMED but
+     * never a matching PAUSED, which would otherwise count the entire day.
+     * Screen-off pauses the clock; screen-on resumes it for the same package.
+     * Total across all apps can never exceed wall-clock time.
      */
     fun usageSinceMs(context: Context, startMs: Long): Map<String, Long> {
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
             ?: return emptyMap()
         val now = System.currentTimeMillis()
 
-        // Fix 3: look back 5 min to find the app that was open at startMs
+        // Look back 5 min to find the app that was already open at startMs.
         val priorEvents = usm.queryEvents(startMs - 300_000L, startMs)
         val priorEvent = UsageEvents.Event()
         var pkgOpenAtStart: String? = null
@@ -48,35 +51,58 @@ object UsageHelper {
         }
 
         val totals = HashMap<String, Long>()
-        val starts = HashMap<String, Long>()
-        if (pkgOpenAtStart != null) starts[pkgOpenAtStart!!] = startMs
+
+        var current: String? = pkgOpenAtStart      // package currently in front
+        var currentStart: Long = startMs           // when its open interval began
+        var screenOn = true                        // assume interactive at startMs
+
+        fun closeInterval(endTs: Long) {
+            val pkg = current ?: return
+            if (screenOn && endTs > currentStart) {
+                totals[pkg] = (totals[pkg] ?: 0L) + (endTs - currentStart)
+            }
+        }
+
+        // SCREEN_INTERACTIVE / SCREEN_NON_INTERACTIVE exist since API 28;
+        // minSdk is below that only in theory — guard by raw values (15/16)
+        // so this compiles against any compileSdk.
+        val screenInteractive = 15
+        val screenNonInteractive = 16
 
         val events = usm.queryEvents(startMs, now)
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            val pkg = event.packageName ?: continue
+            val ts = event.timeStamp
             when (event.eventType) {
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    // Keep earliest start (rare double-FOREGROUND on fast app switch)
-                    if (!starts.containsKey(pkg)) starts[pkg] = event.timeStamp
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {  // == ACTIVITY_RESUMED
+                    val pkg = event.packageName ?: continue
+                    if (pkg == current) continue           // duplicate RESUMED
+                    closeInterval(ts)                      // implicit pause of previous
+                    current = pkg
+                    currentStart = ts
                 }
-                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    val s = starts.remove(pkg)
-                    if (s != null && event.timeStamp > s) {
-                        // Fix 1: normal paired session
-                        totals[pkg] = (totals[pkg] ?: 0L) + (event.timeStamp - s)
-                    } else if (s == null && event.timeStamp > startMs) {
-                        // Fix 2: orphan BACKGROUND — app was open before our window
-                        totals[pkg] = (totals[pkg] ?: 0L) + (event.timeStamp - startMs)
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {  // == ACTIVITY_PAUSED
+                    val pkg = event.packageName ?: continue
+                    if (pkg == current) {                  // ignore pauses of non-current
+                        closeInterval(ts)
+                        current = null
                     }
+                }
+                screenNonInteractive -> {                  // screen off: clock stops
+                    closeInterval(ts)
+                    screenOn = false
+                    currentStart = ts                      // keep pkg; restart on screen-on
+                }
+                screenInteractive -> {                     // screen on: clock resumes
+                    screenOn = true
+                    currentStart = ts
                 }
             }
         }
-        // Close sessions still open at now (currently-foregrounded app, Fix 3 seeds)
-        for ((pkg, s) in starts) {
-            if (now > s) totals[pkg] = (totals[pkg] ?: 0L) + (now - s)
-        }
+        // Close whatever is still in front at `now`.
+        closeInterval(now)
+
         return totals
     }
 }

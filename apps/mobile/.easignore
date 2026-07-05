@@ -1,0 +1,46 @@
+# EAS archive exclusions.
+# Patterns apply relative to wherever EAS treats as the archive root.
+# The root-level .easignore (repo root) handles the monorepo case.
+
+# node_modules — try both relative forms
+node_modules/
+**/node_modules/
+apps/mobile/node_modules/
+
+# Generated native directories — CNG recreates them on the build server
+/android/
+/ios/
+apps/mobile/android/
+apps/mobile/ios/
+
+# Kotlin/Gradle build outputs in local modules
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/.cxx/
+apps/mobile/modules/*/android/build/
+
+# Expo local cache
+.expo/
+apps/mobile/.expo/
+
+# Build outputs
+dist/
+build/
+apps/mobile/dist/
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.log
+
+# Test / dev artifacts
+coverage/
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+
+# Local env files (never upload secrets)
+.env
+.env.local
+.env.*.local

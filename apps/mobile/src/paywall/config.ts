@@ -24,10 +24,18 @@ export const FREE_BLOCK_EVENT_LIMIT = 3;
 /** Free users may configure at most this many daily limits. */
 export const FREE_LIMIT_MAX = 1;
 
-/** True once a real key has been pasted in. */
+/** Free users may configure at most this many scheduled rules (Opal: "1 Rule"). */
+export const FREE_RULE_MAX = 1;
+
+/**
+ * True once a real production key has been pasted in.
+ * test_ keys crash release builds in RevenueCat SDK v10 — treat them as
+ * unconfigured so the app falls through to free-mode / custom PaywallScreen.
+ */
 export function isRevenueCatConfigured(): boolean {
   return (
     REVENUECAT_ANDROID_KEY.length > 10 &&
-    !REVENUECAT_ANDROID_KEY.includes("YOUR_KEY")
+    !REVENUECAT_ANDROID_KEY.includes("YOUR_KEY") &&
+    !REVENUECAT_ANDROID_KEY.startsWith("test_")
   );
 }

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -33,9 +34,16 @@ class BlockActivity : Activity() {
         const val EXTRA_USED_SECS  = "used_secs"
         const val EXTRA_LIMIT_SECS = "limit_secs"
         const val EXTRA_OPEN_COUNT = "open_count"
+        const val EXTRA_RULE_NAME  = "rule_name"
+        const val EXTRA_RULE_ID    = "rule_id"
+        const val EXTRA_OPENS_USED = "opens_used"
+        const val EXTRA_OPENS_MAX  = "opens_max"
+        const val EXTRA_STRICT     = "strict"
 
         const val MODE_FOCUS_SESSION  = "focus_session"
         const val MODE_LIMIT_EXCEEDED = "limit_exceeded"
+        const val MODE_SCHEDULE       = "schedule"
+        const val MODE_OPEN_LIMIT     = "open_limit"
 
         /** Seconds the user must pause before the "extra minutes" button arms. */
         private const val JOKER_GATE_SECONDS = 3
@@ -51,13 +59,17 @@ class BlockActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#F2EDE3"))
+            setBackgroundColor(Color.parseColor("#0A0D0B"))
             setPadding(dp(40), dp(60), dp(40), dp(40))
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
         }
 
-        if (mode == MODE_LIMIT_EXCEEDED) buildLimitExceededView(root)
-        else buildFocusSessionView(root)
+        when (mode) {
+            MODE_LIMIT_EXCEEDED -> buildLimitExceededView(root)
+            MODE_SCHEDULE       -> buildScheduleView(root)
+            MODE_OPEN_LIMIT     -> buildOpenLimitView(root)
+            else                -> buildFocusSessionView(root)
+        }
 
         setContentView(root)
     }
@@ -71,7 +83,7 @@ class BlockActivity : Activity() {
 
     private fun buildFocusSessionView(root: LinearLayout) {
         val openCount = intent.getIntExtra(EXTRA_OPEN_COUNT, 0)
-        root.addView(label("Do you really need\nthis right now? 🤔", 26f, "#1C1610", bold = true))
+        root.addView(label("Do you really need\nthis right now? 🤔", 26f, "#F2F6F3", bold = true))
         root.addView(body("🧘 Take a breath.", topPad = 16, botPad = 16))
         if (openCount > 0) {
             val times = if (openCount == 1) "time" else "times"
@@ -80,6 +92,95 @@ class BlockActivity : Activity() {
         root.addView(primaryBtn("← Back to focus") { goHome() }.apply {
             (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(24)
         })
+    }
+
+    // ---- Scheduled-rule view -------------------------------------------------
+
+    private fun buildScheduleView(root: LinearLayout) {
+        val pkg       = intent.getStringExtra(EXTRA_PACKAGE) ?: ""
+        val ruleName  = intent.getStringExtra(EXTRA_RULE_NAME) ?: "Blocked"
+        val appLabel  = intent.getStringExtra(EXTRA_APP_LABEL) ?: pkg
+        val untilMs   = intent.getLongExtra(EXTRA_UNTIL, 0L)
+        val openCount = intent.getIntExtra(EXTRA_OPEN_COUNT, 0)
+        val strict    = intent.getBooleanExtra(EXTRA_STRICT, false)
+
+        val untilStr = if (untilMs > 0L) {
+            val cal = java.util.Calendar.getInstance().apply { timeInMillis = untilMs }
+            "%d:%02d".format(cal.get(java.util.Calendar.HOUR_OF_DAY),
+                             cal.get(java.util.Calendar.MINUTE))
+        } else ""
+
+        val limitStore  = LimitStore(this)
+        val jokerUsed   = limitStore.isJokerUsedToday(pkg)
+        val jokerActive = limitStore.isJokerActiveNow(pkg)
+
+        root.addView(eyebrow(ruleName.uppercase()))
+        root.addView(label("This is your\n$ruleName time. 🛡️", 26f, "#F2F6F3", bold = true, topPad = 12))
+        root.addView(label("$appLabel is paused by your schedule.", 16f, "#9BA69F", topPad = 8))
+        if (untilStr.isNotEmpty()) {
+            root.addView(body("Unlocks at $untilStr", topPad = 8, botPad = 8))
+        }
+        if (openCount > 0) {
+            val times = if (openCount == 1) "time" else "times"
+            root.addView(eyebrow("Opened this $openCount $times today"))
+        }
+
+        when {
+            strict -> {
+                root.addView(primaryBtn("← Back to focus") { goHome() }.apply {
+                    (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(24)
+                })
+            }
+            jokerActive -> {
+                val cd = body("", topPad = 16, botPad = 8)
+                root.addView(cd)
+                root.addView(primaryBtn("Got it ✓") { finish() })
+                startJokerCountdown(pkg, cd)
+            }
+            !jokerUsed -> {
+                val jokerBtn = primaryBtn("Take a 5 min break") {
+                    limitStore.activateJoker(pkg)
+                    finish()
+                }.apply { (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(24) }
+                root.addView(jokerBtn)
+                root.addView(ghostBtn("← Back to focus") { goHome() })
+                startJokerGate(jokerBtn, "Take a 5 min break")
+            }
+            else -> {
+                root.addView(primaryBtn("← Back to focus") { goHome() }.apply {
+                    (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(24)
+                })
+            }
+        }
+    }
+
+    // ---- Open Limit view ----------------------------------------------------
+
+    private fun buildOpenLimitView(root: LinearLayout) {
+        val pkg       = intent.getStringExtra(EXTRA_PACKAGE) ?: ""
+        val ruleId    = intent.getStringExtra(EXTRA_RULE_ID) ?: ""
+        val ruleName  = intent.getStringExtra(EXTRA_RULE_NAME) ?: "Blocked"
+        val appLabel  = intent.getStringExtra(EXTRA_APP_LABEL) ?: pkg
+        val opensUsed = intent.getIntExtra(EXTRA_OPENS_USED, 0)
+        val opensMax  = intent.getIntExtra(EXTRA_OPENS_MAX, 0)
+        val strict    = intent.getBooleanExtra(EXTRA_STRICT, false)
+
+        val resetUsed = OpenLimitTracker.isResetUsedToday(this, ruleId, pkg)
+
+        root.addView(eyebrow(ruleName.uppercase()))
+        root.addView(label("You've used your\nopens for $appLabel. 🔒", 26f, "#F2F6F3", bold = true, topPad = 12))
+        root.addView(body("$opensUsed of $opensMax opens used today", topPad = 8, botPad = 24))
+
+        if (!strict && !resetUsed) {
+            root.addView(primaryBtn("Reset for today") {
+                OpenLimitTracker.grantReset(this, ruleId, pkg, bonus = 3)
+                finish()
+            })
+            root.addView(ghostBtn("← Back to focus") { goHome() })
+        } else {
+            root.addView(body("That's all for today. 🌙\nSee you tomorrow.", topPad = 0, botPad = 24))
+            root.addView(primaryBtn("← Back to focus") { goHome() })
+        }
     }
 
     // ---- Limit exceeded view -----------------------------------------------
@@ -102,8 +203,8 @@ class BlockActivity : Activity() {
 
         // Positive reframing: the limit is time they chose to protect
         root.addView(eyebrow("LIMIT REACHED"))
-        root.addView(label("You've reclaimed\n${limitMin} min today. ✊", 26f, "#1C1610", bold = true, topPad = 12))
-        root.addView(label("$appLabel wants those minutes back.", 16f, "#6B6256", topPad = 8))
+        root.addView(label("You've reclaimed\n${limitMin} min today. ✊", 26f, "#F2F6F3", bold = true, topPad = 12))
+        root.addView(label("$appLabel wants those minutes back.", 16f, "#9BA69F", topPad = 8))
         root.addView(body("Used $usedMin min of $limitMin min$openStr", topPad = 8, botPad = 32))
 
         when {
@@ -116,7 +217,7 @@ class BlockActivity : Activity() {
             }
             !jokerUsed -> {
                 // Offer the once-a-day joker, but make them pause first.
-                val jokerBtn = primaryBtn("⏱️ Use 5 more minutes") {
+                val jokerBtn = primaryBtn("Use 5 more minutes") {
                     limitStore.activateJoker(pkg)
                     finish()
                 }
@@ -125,7 +226,7 @@ class BlockActivity : Activity() {
                     limitStore.markJokerExhausted(pkg)
                     goHome()
                 })
-                startJokerGate(jokerBtn, "⏱️ Use 5 more minutes")
+                startJokerGate(jokerBtn, "Use 5 more minutes")
             }
             else -> {
                 // Joker spent or declined — hard block for the rest of the day.
@@ -166,7 +267,7 @@ class BlockActivity : Activity() {
             override fun run() {
                 val remSec = ((end - System.currentTimeMillis()) / 1000).coerceAtLeast(0L)
                 if (remSec <= 0L) { goHome(); return }
-                view.text = "⏳ Extra time: %d:%02d left".format(remSec / 60, remSec % 60)
+                view.text = "Extra time: %d:%02d left".format(remSec / 60, remSec % 60)
                 handler.postDelayed(this, 1000)
             }
         }
@@ -193,7 +294,7 @@ class BlockActivity : Activity() {
         TextView(this).apply {
             this.text = text
             textSize = 12f
-            setTextColor(Color.parseColor("#B26A0A"))
+            setTextColor(Color.parseColor("#A9EEC8"))
             gravity = Gravity.CENTER
             letterSpacing = 0.18f
             setTypeface(typeface, Typeface.BOLD)
@@ -214,7 +315,7 @@ class BlockActivity : Activity() {
         TextView(this).apply {
             this.text = text
             textSize = 15f
-            setTextColor(Color.parseColor("#6B6256"))
+            setTextColor(Color.parseColor("#9BA69F"))
             gravity = Gravity.CENTER
             setLineSpacing(0f, 1.3f)  // API 1+, unlike lineHeight (API 28)
             setPadding(0, dp(topPad), 0, dp(botPad))
@@ -223,8 +324,11 @@ class BlockActivity : Activity() {
     private fun primaryBtn(text: String, onClick: () -> Unit): Button =
         Button(this).apply {
             this.text = text
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#B26A0A"))
+            setTextColor(Color.parseColor("#08130C"))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#A9EEC8"))
+                cornerRadius = dp(28).toFloat()
+            }
             setPadding(dp(24), dp(14), dp(24), dp(14))
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                 bottomMargin = dp(12)
@@ -235,7 +339,7 @@ class BlockActivity : Activity() {
     private fun ghostBtn(text: String, onClick: () -> Unit): Button =
         Button(this).apply {
             this.text = text
-            setTextColor(Color.parseColor("#6B6256"))
+            setTextColor(Color.parseColor("#9BA69F"))
             setBackgroundColor(Color.TRANSPARENT)
             setPadding(dp(24), dp(14), dp(24), dp(14))
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)

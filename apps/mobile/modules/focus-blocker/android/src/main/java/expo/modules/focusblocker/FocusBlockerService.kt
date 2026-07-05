@@ -57,6 +57,11 @@ class FocusBlockerService : Service() {
 
     // Cached — avoids creating a new object on every tick
     private val limitStore by lazy { LimitStore(this) }
+    private val scheduleStore by lazy { ScheduleStore(this) }
+
+    // Scheduled rules are JSON-parsed from prefs, so cache them and refresh on
+    // the 30 s limit cadence (and whenever JS mutates them via ACTION_START_LIMITS_ONLY).
+    private var schedules: List<ScheduleRule> = emptyList()
 
     // Focus-session state
     private var blocked: Set<String> = emptySet()
@@ -111,6 +116,7 @@ class FocusBlockerService : Service() {
     }
 
     private fun ensureRunning() {
+        schedules = scheduleStore.getAllRules()
         if (!isRunning) {
             startForeground(NOTIF_ID, buildNotification())
             isRunning = true
@@ -143,9 +149,15 @@ class FocusBlockerService : Service() {
         if (pkg == packageName) return
 
         // Arm an immediate limit check when the user switches to a different app
-        if (pkg != prevForeground) {
+        val isNewSwitch = pkg != prevForeground
+        if (isNewSwitch) {
             prevForeground = pkg
             limitTick = LIMIT_CHECK_EVERY
+            // Record a fresh "open" for any enabled Open Limit rule covering pkg today.
+            schedules
+                .filter { it.type == "openLimit" && it.enabled && pkg in it.packageNames &&
+                    ScheduleStore.isTodayActiveDay(it, now) }
+                .forEach { OpenLimitTracker.recordOpen(this, it.id, pkg, now) }
         }
 
         // 1. Focus session check (every tick)
@@ -156,10 +168,39 @@ class FocusBlockerService : Service() {
             return
         }
 
-        // 2. Limit check (every LIMIT_CHECK_EVERY ticks, or immediately on app switch)
+        // 2. Scheduled-rule check (every tick; rules list is cached in memory)
+        val activeRule = ScheduleStore.activeRuleFor(schedules, pkg, now)
+        if (activeRule != null && now - lastBlockShownAt > RESHOW_GRACE_MS) {
+            registerBlockEvent(pkg, now)
+            lastBlockShownAt = now
+            showScheduleBlock(pkg, activeRule, now)
+            return
+        }
+
+        // 2b. Open Limit check (every tick — cheap, no UsageStats query)
+        val openRule = schedules.firstOrNull {
+            it.type == "openLimit" && it.enabled && pkg in it.packageNames &&
+                ScheduleStore.isTodayActiveDay(it, now)
+        }
+        if (openRule != null && now - lastBlockShownAt > RESHOW_GRACE_MS) {
+            val count = OpenLimitTracker.todayCount(this, openRule.id, pkg)
+            val openStart = OpenLimitTracker.currentOpenStartMs(this, openRule.id, pkg)
+            val overOpens = count > openRule.maxOpens
+            val overDuration = openRule.perOpenSeconds > 0 &&
+                openStart > 0 && now - openStart > openRule.perOpenSeconds * 1000L
+            if (overOpens || overDuration) {
+                registerBlockEvent(pkg, now)
+                lastBlockShownAt = now
+                showOpenLimitBlock(pkg, openRule, count)
+                return
+            }
+        }
+
+        // 3. Limit check (every LIMIT_CHECK_EVERY ticks, or immediately on app switch)
         limitTick++
         if (limitTick >= LIMIT_CHECK_EVERY) {
             limitTick = 0
+            schedules = scheduleStore.getAllRules()  // refresh cache on the same cadence
             checkLimit(pkg, now)
         }
     }
@@ -169,7 +210,7 @@ class FocusBlockerService : Service() {
         // even when the screen is off. Auto-released after 5 s as a safety net.
         val wl = (getSystemService(POWER_SERVICE) as? PowerManager)
             ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "focuslens:check")
-            ?.also { it.acquire(5_000L) }
+            ?.also { it.acquire(1_000L) }
         try {
             val limit = limitStore.getLimit(pkg) ?: return
 
@@ -237,6 +278,36 @@ class FocusBlockerService : Service() {
         startActivity(intent)
     }
 
+    private fun showScheduleBlock(pkg: String, rule: ScheduleRule, now: Long) {
+        val intent = Intent(this, BlockActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            putExtra(BlockActivity.EXTRA_PACKAGE,    pkg)
+            putExtra(BlockActivity.EXTRA_MODE,       BlockActivity.MODE_SCHEDULE)
+            putExtra(BlockActivity.EXTRA_RULE_NAME,  rule.name)
+            putExtra(BlockActivity.EXTRA_UNTIL,      ScheduleStore.windowEndMs(rule, now))
+            putExtra(BlockActivity.EXTRA_APP_LABEL,  appLabel(pkg))
+            putExtra(BlockActivity.EXTRA_OPEN_COUNT, BlockStats.todayCountForPkg(this@FocusBlockerService, pkg))
+            putExtra(BlockActivity.EXTRA_STRICT,     rule.strict)
+        }
+        startActivity(intent)
+    }
+
+    private fun showOpenLimitBlock(pkg: String, rule: ScheduleRule, opensUsed: Int) {
+        val intent = Intent(this, BlockActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            putExtra(BlockActivity.EXTRA_PACKAGE,     pkg)
+            putExtra(BlockActivity.EXTRA_MODE,        BlockActivity.MODE_OPEN_LIMIT)
+            putExtra(BlockActivity.EXTRA_RULE_NAME,   rule.name)
+            putExtra(BlockActivity.EXTRA_RULE_ID,     rule.id)
+            putExtra(BlockActivity.EXTRA_APP_LABEL,   appLabel(pkg))
+            putExtra(BlockActivity.EXTRA_OPENS_USED,  opensUsed)
+            putExtra(BlockActivity.EXTRA_OPENS_MAX,   rule.maxOpens)
+            putExtra(BlockActivity.EXTRA_STRICT,      rule.strict)
+            putExtra(BlockActivity.EXTRA_OPEN_COUNT,  BlockStats.todayCountForPkg(this@FocusBlockerService, pkg))
+        }
+        startActivity(intent)
+    }
+
     private fun showLimitBlock(pkg: String, label: String, usedSecs: Int, limitSecs: Int) {
         val intent = Intent(this, BlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -255,7 +326,9 @@ class FocusBlockerService : Service() {
     private fun shouldKeepRunning(): Boolean {
         val sessionActive = blocked.isNotEmpty() && until > System.currentTimeMillis()
         val hasLimits     = limitStore.getAllLimits().isNotEmpty()
-        return sessionActive || hasLimits
+        val hasSchedules  = schedules.any { it.enabled } ||
+            scheduleStore.getAllRules().any { it.enabled }
+        return sessionActive || hasLimits || hasSchedules
     }
 
     private fun stopService() {

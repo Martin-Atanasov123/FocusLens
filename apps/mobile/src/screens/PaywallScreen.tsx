@@ -61,11 +61,15 @@ export default function PaywallScreen({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Downsell step (Opal-style): first close attempt on the annual plan offers
+  // the monthly plan once before actually closing.
+  const [downsell, setDownsell] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setLoading(true);
     setError(null);
+    setDownsell(false);
     (async () => {
       const pkgs = await fetchPackages();
       setPackages(pkgs);
@@ -95,6 +99,22 @@ export default function PaywallScreen({
     }
   };
 
+  const monthlyPkg = useMemo(
+    () => packages.find((p) => p.packageType === PACKAGE_TYPE.MONTHLY) ?? null,
+    [packages]
+  );
+
+  /** Close request: intercept once with the monthly downsell when relevant. */
+  const requestClose = () => {
+    const annualSelected = selectedPkg?.packageType === PACKAGE_TYPE.ANNUAL;
+    if (!downsell && annualSelected && monthlyPkg) {
+      setDownsell(true);
+      setSelected(monthlyPkg.identifier);
+      return;
+    }
+    onClose();
+  };
+
   const doRestore = async () => {
     if (busy) return;
     setBusy(true);
@@ -110,9 +130,9 @@ export default function PaywallScreen({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={requestClose}>
       <View style={s.root}>
-        <Pressable style={s.close} onPress={onClose} hitSlop={12}>
+        <Pressable style={s.close} onPress={requestClose} hitSlop={12}>
           <Text style={s.closeText}>✕</Text>
         </Pressable>
 
@@ -121,17 +141,23 @@ export default function PaywallScreen({
           showsVerticalScrollIndicator={false}
         >
           <Text style={s.eyebrow}>FOCUSLENS PRO</Text>
-          <Text style={s.headline}>{headline}</Text>
-          <Text style={s.subhead}>{subhead}</Text>
+          <Text style={s.headline}>
+            {downsell ? "Not ready for a year?" : headline}
+          </Text>
+          <Text style={s.subhead}>
+            {downsell ? "We get it. Try a monthly plan instead." : subhead}
+          </Text>
 
-          <View style={s.perks}>
-            {PRO_PERKS.map((perk) => (
-              <View key={perk} style={s.perkRow}>
-                <Text style={s.perkCheck}>✓</Text>
-                <Text style={s.perkText}>{perk}</Text>
-              </View>
-            ))}
-          </View>
+          {!downsell && (
+            <View style={s.perks}>
+              {PRO_PERKS.map((perk) => (
+                <View key={perk} style={s.perkRow}>
+                  <Text style={s.perkCheck}>✓</Text>
+                  <Text style={s.perkText}>{perk}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {loading ? (
             <ActivityIndicator color={C.amber} style={{ marginVertical: 40 }} />
@@ -145,7 +171,7 @@ export default function PaywallScreen({
           ) : (
             <>
               <View style={s.plans}>
-                {packages.map((pkg) => {
+                {(downsell && monthlyPkg ? [monthlyPkg] : packages).map((pkg) => {
                   const on = pkg.identifier === selected;
                   const isAnnual = pkg.packageType === PACKAGE_TYPE.ANNUAL;
                   const hint = perMonthHint(pkg);
@@ -186,6 +212,12 @@ export default function PaywallScreen({
                   {busy ? "Processing…" : "Continue"}
                 </Text>
               </Pressable>
+
+              {downsell && (
+                <Pressable onPress={onClose} disabled={busy} style={s.restore}>
+                  <Text style={s.restoreText}>No thanks →</Text>
+                </Pressable>
+              )}
 
               <Pressable onPress={doRestore} disabled={busy} style={s.restore}>
                 <Text style={s.restoreText}>Restore purchases</Text>
@@ -244,14 +276,14 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: C.surf,
-    borderRadius: 14,
+    backgroundColor: C.glass,
+    borderRadius: 20,
     borderWidth: 2,
     borderColor: C.border,
     paddingVertical: 16,
     paddingHorizontal: 16,
   },
-  planOn: { borderColor: C.amber, backgroundColor: "#FBEFD6" },
+  planOn: { borderColor: C.amber, backgroundColor: C.glowFaint },
   planLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   radio: {
     width: 22,
@@ -282,7 +314,7 @@ const s = StyleSheet.create({
     paddingVertical: 2,
   },
   bestBadgeText: {
-    color: "#fff",
+    color: C.onAccent,
     fontSize: 9,
     fontWeight: "800",
     letterSpacing: 0.5,
@@ -292,12 +324,16 @@ const s = StyleSheet.create({
   cta: {
     backgroundColor: C.amber,
     paddingVertical: 17,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: "center",
     marginTop: 4,
+    shadowColor: C.amber,
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 10,
   },
   ctaBusy: { opacity: 0.7 },
-  ctaText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  ctaText: { color: C.onAccent, fontSize: 17, fontWeight: "700" },
   restore: { paddingVertical: 14, alignItems: "center" },
   restoreText: { color: C.ink2, fontSize: 14, fontWeight: "500" },
   fine: {
@@ -316,8 +352,8 @@ const s = StyleSheet.create({
 
   // unavailable state
   unavailable: {
-    backgroundColor: C.surf,
-    borderRadius: 14,
+    backgroundColor: C.glass,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: C.border,
     padding: 20,

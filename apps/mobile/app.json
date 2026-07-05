@@ -5,8 +5,8 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "focuslens",
-    "userInterfaceStyle": "light",
-    "backgroundColor": "#F2EDE3",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#070A08",
     "icon": "./assets/icon.png",
     "platforms": [
       "android"
@@ -50,6 +50,20 @@
         "expo-camera",
         {
           "cameraPermission": "FocusLens uses the camera to scan the pairing QR code from your desktop dashboard."
+        }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"
+          ]
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#A9EEC8"
         }
       ]
     ],

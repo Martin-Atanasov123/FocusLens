@@ -1,22 +1,31 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   AppState,
+  Easing,
   FlatList,
+  LayoutAnimation,
   Linking as RNLinking,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  UIManager,
   View,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Linking from "expo-linking";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { WebView } from "react-native-webview";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { C, CTA_GRADIENT } from "./theme";
 
 import { initSentry } from "./observability";
 initSentry(); // no-op until a real DSN is set in observability.ts
@@ -25,6 +34,25 @@ import FocusScreen from "./screens/FocusScreen";
 import LimitsScreen from "./screens/LimitsScreen";
 import OnboardingScreen from "./screens/OnboardingScreen";
 import PaywallScreen from "./screens/PaywallScreen";
+import ProfileScreen from "./screens/ProfileScreen";
+import SchedulesScreen from "./screens/SchedulesScreen";
+import WelcomeRitual from "./screens/WelcomeRitual";
+import {
+  finalizePendingSession,
+  getSessionsToday,
+  getStreak,
+  getTotals,
+  takeNewGemUnlocks,
+} from "./gamification/streaks";
+import { computeScore, saveScoreSnapshot } from "./gamification/score";
+import { notifyGemUnlocked, syncStreakReminder } from "./notifications";
+import { AppIcon, useAppIcons } from "./components/AppIcon";
+import { FadeInView, PressableScale } from "./components/Motion";
+
+// Smooth layout transitions (list growth, expand/collapse) on Android.
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { getBlockEventCount, getLimits, AppLimitInfo } from "./blocking/FocusBlocker";
 import { useEntitlements } from "./paywall/useEntitlements";
 import { FREE_BLOCK_EVENT_LIMIT } from "./paywall/config";
@@ -45,19 +73,6 @@ import {
   todayUsageSeconds,
 } from "./sync";
 
-const C = {
-  bg: "#F2EDE3",
-  surf: "#E9E3D7",
-  surf2: "#E0D9CB",
-  border: "rgba(24,18,8,0.09)",
-  ink: "#1C1610",
-  ink2: "#6B6256",
-  ink3: "#A8A098",
-  amber: "#B26A0A",
-  green: "#1D6B3F",
-  red: "#B5280A",
-};
-
 type UsageRow = { key: string; label: string; secs: number };
 
 function fmt(secs: number): string {
@@ -73,17 +88,32 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Parse focuslens://pair?url=...&token=... or ?host=&port=&token= */
+// Hosts allowed as pairing targets: RFC-1918 private ranges + Cloudflare tunnel.
+const PRIVATE_IP = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/;
+const TUNNEL_HOST = ".trycloudflare.com";
+
+/** Parse focuslens://pair?url=...&token=... or ?host=&port=&token=
+ *  Only accepts private-network hosts and the known tunnel domain to prevent
+ *  a malicious QR from redirecting usage data + token to an attacker server. */
 function parsePairUrl(url: string): PairConfig | null {
   try {
     const { hostname, queryParams } = Linking.parse(url);
     if (hostname !== "pair" || !queryParams) return null;
     const token = String(queryParams.token ?? "");
+    if (token.length < 8) return null;
+
     const explicit = queryParams.url ? String(queryParams.url) : "";
-    if (explicit) return { baseUrl: explicit.replace(/\/+$/, ""), token };
+    if (explicit) {
+      const u = new URL(explicit);
+      if (!["http:", "https:"].includes(u.protocol)) return null;
+      const h = u.hostname;
+      if (!PRIVATE_IP.test(h) && !h.endsWith(TUNNEL_HOST)) return null;
+      return { baseUrl: u.origin, token };
+    }
     const host = queryParams.host ? String(queryParams.host) : "";
-    if (!host) return null;
-    const port = queryParams.port ? String(queryParams.port) : "48732";
+    if (!host || !PRIVATE_IP.test(host)) return null;
+    const rawPort = String(queryParams.port ?? "48732");
+    const port = /^\d{1,5}$/.test(rawPort) ? rawPort : "48732";
     return { baseUrl: `http://${host}:${port}`, token };
   } catch {
     return null;
@@ -99,12 +129,18 @@ export default function App() {
   const [manualToken, setManualToken] = useState("");
   const [loading, setLoading] = useState(true);
   const [onboarded, setOnboarded] = useState(false);
+  const [userName, setUserName] = useState("");
+  const [ritualOpen, setRitualOpen] = useState(false);
   const [showDesktop, setShowDesktop] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [focusOpen, setFocusOpen] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
+  const [schedulesOpen, setSchedulesOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false); // fallback custom paywall
   const [limits, setLimits] = useState<AppLimitInfo[]>([]);
+  const [streakCount, setStreakCount] = useState(0);
+  const [sessionsToday, setSessionsToday] = useState(0);
 
   const { isPro, refresh: refreshEntitlements } = useEntitlements();
 
@@ -132,6 +168,60 @@ export default function App() {
   // The currently reachable URL (LAN or tunnel), resolved by the heartbeat.
   const [activeBase, setActiveBase] = useState<string | null>(null);
 
+  // ---- Focus Score (derived before hooks so effects can depend on it) -----
+  // Real formula lives in gamification/score.ts: 100 baseline − screen-time
+  // penalty (2 h free, −8/h after) − limit penalties (−15 blown / −5 near)
+  // + completed-session bonus (+5 each, max +15). Loss-framed on purpose.
+  const totalSecs = usage.reduce((a, u) => a + u.secs, 0);
+  const exceededCount = limits.filter((l) => l.usedSecs >= l.dailyLimitSecs).length;
+  const nearCapCount  = limits.filter(
+    (l) => l.usedSecs < l.dailyLimitSecs && l.usedSecs / l.dailyLimitSecs >= 0.8
+  ).length;
+  const { score } = computeScore({
+    totalScreenSecs: totalSecs,
+    exceededCount,
+    nearCapCount,
+    sessionsToday,
+  });
+  const scoreColor = score >= 80 ? C.amber : score >= 50 ? C.flame : C.red;
+
+  // Best-effort daily score history (fuels future weekly report).
+  useEffect(() => {
+    saveScoreSnapshot(score);
+  }, [score]);
+
+  // Score counts up smoothly whenever the target changes (0 → score on open).
+  const [displayScore, setDisplayScore] = useState(0);
+  useEffect(() => {
+    const from = displayScore;
+    const startTs = Date.now();
+    const DURATION = 900;
+    const id = setInterval(() => {
+      const t = Math.min(1, (Date.now() - startTs) / DURATION);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplayScore(Math.round(from + (score - from) * eased));
+      if (t >= 1) clearInterval(id);
+    }, 16);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [score]);
+
+  // Real launcher icons for today's app list (cached for the session).
+  const appIcons = useAppIcons(usage.map((u) => u.key));
+
+  // Orb breathing loop (Opal's gem idles the same way).
+  const orbScale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(orbScale, { toValue: 1.05, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(orbScale, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [orbScale]);
+
   const refresh = useCallback(async () => {
     const perm = await hasUsagePermission();
     setPermission(perm);
@@ -143,23 +233,54 @@ export default function App() {
         setUsage([]);
       }
     }
+    // Credit any focus session that completed while the app was closed,
+    // then refresh the streak flame + today's session count.
+    await finalizePendingSession().catch(() => null);
+    const st = await getStreak().catch(() => null);
+    if (st) setStreakCount(st.current);
+    const sess = await getSessionsToday().catch(() => 0);
+    setSessionsToday(sess);
+
+    // Keep the evening streak reminder aimed at the right day.
+    if (st) {
+      const today = new Date().toISOString().slice(0, 10);
+      syncStreakReminder(st.lastGoodDay === today, st.current).catch(() => {});
+
+      // Celebrate any newly earned gems.
+      try {
+        const totals = await getTotals();
+        const fresh = await takeNewGemUnlocks({
+          totals,
+          streak: st,
+          limitsCount: getLimits().length,
+          blockEventCount: getBlockEventCount(),
+        });
+        fresh.forEach((g) => notifyGemUnlocked(g.name, g.hint).catch(() => {}));
+      } catch {
+        /* gems are best-effort */
+      }
+    }
   }, []);
 
-  const completeOnboarding = useCallback(async () => {
-    await AsyncStorage.setItem("fl_onboarded", "1");
+  const completeOnboarding = useCallback(async (name: string) => {
+    await AsyncStorage.multiSet([["fl_onboarded", "1"], ["fl_name", name]]);
+    setUserName(name);
     setOnboarded(true);
+    setRitualOpen(true); // cinematic welcome, then the home screen
     await refresh();
   }, [refresh]);
 
   // Initial load + deep link wiring
   useEffect(() => {
     (async () => {
-      const [saved, onboardedFlag] = await Promise.all([
+      const [saved, onboardedFlag, savedName] = await Promise.all([
         loadConfig(),
         AsyncStorage.getItem("fl_onboarded"),
+        AsyncStorage.getItem("fl_name"),
       ]);
       if (saved) setCfg(saved);
       setOnboarded(!!onboardedFlag);
+      if (savedName) setUserName(savedName);
       const initial = await RNLinking.getInitialURL();
       if (initial) {
         const pc = parsePairUrl(initial);
@@ -218,7 +339,9 @@ export default function App() {
     };
   }, [isPro, onboarded, permission, openPaywall]);
 
-  // Connection heartbeat: resolve a reachable URL (LAN → tunnel) every 5s.
+  // Connection heartbeat with exponential back-off.
+  // On success: 5 s interval. On failure: doubles each time up to 60 s.
+  // Prevents near-continuous radio wake when the desktop is offline.
   useEffect(() => {
     if (!cfg) {
       setConnected(null);
@@ -226,17 +349,23 @@ export default function App() {
       return;
     }
     let alive = true;
+    let delay = 5_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
     const check = async () => {
       const base = await resolveBaseUrl(cfg);
       if (!alive) return;
-      setConnected(!!base);
+      const ok = !!base;
+      setConnected(ok);
       setActiveBase(base);
+      delay = ok ? 5_000 : Math.min(delay * 2, 60_000);
+      timer = setTimeout(check, delay);
     };
+
     check();
-    const id = setInterval(check, 5000);
     return () => {
       alive = false;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, [cfg]);
 
@@ -300,11 +429,16 @@ export default function App() {
     return <OnboardingScreen onComplete={completeOnboarding} />;
   }
 
+  // ---- Welcome ritual: one cinematic pass right after onboarding ----------
+  if (ritualOpen) {
+    return <WelcomeRitual name={userName} onDone={() => setRitualOpen(false)} />;
+  }
+
   // ---- Permission gate: nothing works without usage access ----------------
   if (!permission) {
     return (
       <View style={s.root}>
-        <StatusBar style="dark" />
+        <StatusBar style="light" />
         <Text style={s.logo}>
           Focus<Text style={s.logoEm}>Lens</Text>
         </Text>
@@ -348,7 +482,6 @@ export default function App() {
   }
 
   // ---- Standalone view: phone screen time is the main content -------------
-  const totalSecs = usage.reduce((a, u) => a + u.secs, 0);
   const statusColor =
     connected === true ? C.green : connected === false ? C.red : C.ink3;
   const statusText =
@@ -362,49 +495,115 @@ export default function App() {
   const limitMap: Record<string, AppLimitInfo> = {};
   limits.forEach((l) => { limitMap[l.packageName] = l; });
 
-  const exceededCount = limits.filter((l) => l.usedSecs >= l.dailyLimitSecs).length;
-  const nearCapCount  = limits.filter(
-    (l) => l.usedSecs < l.dailyLimitSecs && l.usedSecs / l.dailyLimitSecs >= 0.8
-  ).length;
-
   const header = (
     <View>
-      <Text style={s.logo}>
-        Focus<Text style={s.logoEm}>Lens</Text>
-      </Text>
-
-      <Text style={s.heroEye}>TOTAL · TODAY</Text>
-      <Text style={s.heroNum}>{fmt(totalSecs)}</Text>
-      <Text style={s.heroDate}>{todayStr()}</Text>
-
-      {/* Limits status bar */}
-      {limits.length > 0 && (
-        <Pressable style={s.limitsStatusBar} onPress={() => setLimitsOpen(true)}>
-          <View style={[
-            s.limitsStatusDot,
-            { backgroundColor: exceededCount > 0 ? C.red : nearCapCount > 0 ? C.amber : C.green }
-          ]} />
-          <Text style={s.limitsStatusText}>
-            {exceededCount > 0
-              ? `${exceededCount} limit${exceededCount > 1 ? "s" : ""} reached`
-              : nearCapCount > 0
-              ? `${nearCapCount} app${nearCapCount > 1 ? "s" : ""} near cap`
-              : `${limits.length} limit${limits.length > 1 ? "s" : ""} active`}
-          </Text>
-          <Text style={s.limitsStatusChev}>›</Text>
-        </Pressable>
-      )}
-
-      <View style={s.actionRow}>
-        <Pressable style={[s.focusBtn, s.actionHalf]} onPress={() => setFocusOpen(true)}>
-          <Text style={s.focusBtnText}>⚡ Focus session</Text>
-        </Pressable>
-        <Pressable style={[s.limitsBtn, s.actionHalf]} onPress={() => setLimitsOpen(true)}>
-          <Text style={s.limitsBtnText}>
-            {limits.length > 0 ? `🛡️ Daily limits · ${limits.length}` : "🛡️ Daily limits"}
-          </Text>
-        </Pressable>
+      <View style={s.topBar}>
+        <Text style={s.logo}>
+          Focus<Text style={s.logoEm}>Lens</Text>
+        </Text>
+        <View style={s.topRight}>
+          <View style={s.streakChip}>
+            <Ionicons
+              name="flame"
+              size={15}
+              color={streakCount > 0 ? C.flame : C.ink3}
+            />
+            <Text style={[s.streakText, streakCount > 0 && { color: C.flame }]}>
+              {streakCount}
+            </Text>
+          </View>
+          <Pressable style={s.avatar} onPress={() => setProfileOpen(true)}>
+            <Ionicons name="person" size={18} color={C.amber} />
+          </Pressable>
+        </View>
       </View>
+
+      {userName ? <Text style={s.greeting}>Hey {userName} 👋</Text> : null}
+
+      {/* Hero: glowing lens orb + Focus Score */}
+      <FadeInView style={s.hero}>
+        <View style={s.orbWrap}>
+          <Animated.View style={[s.orbGlow, { transform: [{ scale: orbScale }] }]} />
+          <Animated.View style={{ transform: [{ scale: orbScale }] }}>
+            <LinearGradient
+              colors={["#D8FBE8", "#A9EEC8", "#55B983"]}
+              start={{ x: 0.2, y: 0.1 }}
+              end={{ x: 0.85, y: 1 }}
+              style={s.orb}
+            />
+          </Animated.View>
+        </View>
+        <Text style={s.heroEye}>FOCUS SCORE</Text>
+        <Text style={[s.heroNum, { color: scoreColor }]}>{displayScore}</Text>
+        <View style={s.screenTimeChip}>
+          <Ionicons name="time-outline" size={13} color={C.ink3} />
+          <Text style={s.heroDate}>
+            {fmt(totalSecs)} on screen · {todayStr()}
+          </Text>
+        </View>
+      </FadeInView>
+
+      {/* Quick actions — dashed pills like Opal's Sleep / Focus / Rest */}
+      <FadeInView delay={120} style={s.actionRow}>
+        <View style={s.actionCol}>
+          <PressableScale style={s.pillBtn} scaleTo={0.92} onPress={() => setFocusOpen(true)}>
+            <Ionicons name="hourglass-outline" size={20} color={C.amber} />
+          </PressableScale>
+          <Text style={s.pillLabel}>Focus</Text>
+        </View>
+        <View style={s.actionCol}>
+          <PressableScale style={s.pillBtn} scaleTo={0.92} onPress={() => setLimitsOpen(true)}>
+            <Ionicons name="shield-half-outline" size={20} color={C.amber} />
+          </PressableScale>
+          <Text style={s.pillLabel}>Limits</Text>
+        </View>
+        <View style={s.actionCol}>
+          <PressableScale style={s.pillBtn} scaleTo={0.92} onPress={() => setSchedulesOpen(true)}>
+            <Ionicons name="calendar-outline" size={20} color={C.amber} />
+          </PressableScale>
+          <Text style={s.pillLabel}>Rules</Text>
+        </View>
+      </FadeInView>
+
+      {/* "My Apps" style card: limits summary */}
+      <FadeInView delay={220}>
+      <PressableScale style={s.myAppsCard} scaleTo={0.98} onPress={() => setLimitsOpen(true)}>
+        <View style={s.myAppsHead}>
+          <Text style={s.myAppsTitle}>My Limits</Text>
+          <Text style={s.myAppsChev}>›</Text>
+        </View>
+        <View style={s.myAppsRow}>
+          <View
+            style={[
+              s.shieldBadge,
+              exceededCount > 0 && { backgroundColor: "rgba(240,133,115,0.15)" },
+            ]}
+          >
+            <Ionicons
+              name={exceededCount > 0 ? "lock-closed" : "shield-checkmark"}
+              size={20}
+              color={exceededCount > 0 ? C.red : C.amber}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.myAppsMain}>
+              {limits.length > 0
+                ? exceededCount > 0
+                  ? `${exceededCount} app${exceededCount > 1 ? "s" : ""} blocked`
+                  : nearCapCount > 0
+                  ? `${nearCapCount} app${nearCapCount > 1 ? "s" : ""} near cap`
+                  : "All limits on track"
+                : "No limits yet"}
+            </Text>
+            <Text style={s.myAppsSub}>
+              {limits.length > 0
+                ? `${limits.length} daily limit${limits.length > 1 ? "s" : ""} active`
+                : "Tap to set your first daily limit"}
+            </Text>
+          </View>
+        </View>
+      </PressableScale>
+      </FadeInView>
 
       <View style={s.sectionRule}>
         <Text style={s.sectionLabel}>TODAY'S APPS</Text>
@@ -512,12 +711,13 @@ export default function App() {
 
   return (
     <View style={s.root}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <FlatList
         data={usage.slice(0, 30)}
         keyExtractor={(i) => i.key}
         ListHeaderComponent={header}
         ListFooterComponent={footer}
+        contentContainerStyle={{ paddingBottom: 108 }}
         onRefresh={refresh}
         refreshing={false}
         showsVerticalScrollIndicator={false}
@@ -533,6 +733,12 @@ export default function App() {
 
           return (
             <View style={s.row}>
+              <AppIcon
+                uri={appIcons[item.key]}
+                label={item.label}
+                size={36}
+                locked={exceeded}
+              />
               <View style={s.rowLeft}>
                 <View style={s.rowTop}>
                   <Text style={s.rowLabel} numberOfLines={1}>{item.label}</Text>
@@ -594,12 +800,47 @@ export default function App() {
         </View>
       </Modal>
 
-      <FocusScreen visible={focusOpen} onClose={() => setFocusOpen(false)} />
+      {/* Bottom pill navigation (Opal style): Home · My Apps · Timer */}
+      <View style={s.nav} pointerEvents="box-none">
+        <View style={s.navPill}>
+          <Pressable style={[s.navItem, s.navItemActive]}>
+            <Ionicons name="ellipse-outline" size={18} color={C.ink} />
+            <Text style={[s.navLabel, s.navLabelActive]}>Home</Text>
+          </Pressable>
+          <Pressable style={s.navItem} onPress={() => setLimitsOpen(true)}>
+            <Ionicons name="apps" size={18} color={C.ink3} />
+            <Text style={s.navLabel}>My Apps</Text>
+          </Pressable>
+          <Pressable style={s.navItem} onPress={() => setFocusOpen(true)}>
+            <Ionicons name="play" size={18} color={C.ink3} />
+            <Text style={s.navLabel}>Timer</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <FocusScreen
+        visible={focusOpen}
+        onClose={() => {
+          setFocusOpen(false);
+          refresh(); // pick up streak credit from a just-finished session
+        }}
+      />
       <LimitsScreen
         visible={limitsOpen}
         onClose={() => setLimitsOpen(false)}
         isPro={isPro}
         onRequestUpgrade={openPaywall}
+      />
+      <SchedulesScreen
+        visible={schedulesOpen}
+        onClose={() => setSchedulesOpen(false)}
+        isPro={isPro}
+        onRequestUpgrade={openPaywall}
+      />
+      <ProfileScreen
+        visible={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        userName={userName}
       />
       {/* Custom paywall — fallback when RC paywall template not yet configured */}
       <PaywallScreen
@@ -634,45 +875,170 @@ const s = StyleSheet.create({
   logoEm: { fontStyle: "italic", color: C.amber },
   tag: { fontSize: 12, color: C.ink3, marginBottom: 24 },
 
-  // hero
-  heroEye: { fontSize: 10, letterSpacing: 2, color: C.ink3, marginBottom: 6 },
-  heroNum: { fontSize: 64, fontWeight: "200", color: C.ink, letterSpacing: -2, lineHeight: 68 },
-  heroDate: { fontSize: 13, color: C.ink2, marginTop: 4, fontVariant: ["tabular-nums"] },
-
-  // limits status bar
-  limitsStatusBar: {
+  // top bar
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  greeting: { fontSize: 13, color: C.ink3, marginTop: 6 },
+  topRight: { flexDirection: "row", alignItems: "center", gap: 10 },
+  streakChip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: C.surf,
+    gap: 4,
+    backgroundColor: C.glass,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    marginTop: 14,
-    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  limitsStatusDot: { width: 8, height: 8, borderRadius: 4 },
-  limitsStatusText: { flex: 1, fontSize: 13, color: C.ink2, fontWeight: "500" },
-  limitsStatusChev: { fontSize: 16, color: C.ink3 },
+  streakText: { color: C.ink3, fontSize: 13, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: C.glass,
+    borderWidth: 1.5,
+    borderColor: C.glow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
-  actionRow: { flexDirection: "row", gap: 10, marginTop: 14 },
-  actionHalf: { flex: 1 },
-  focusBtn: { backgroundColor: C.amber, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-  focusBtnText: { color: "#fff", fontSize: 14, fontWeight: "700" },
-  limitsBtn: { backgroundColor: C.surf, paddingVertical: 14, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: C.border },
-  limitsBtnText: { color: C.ink, fontSize: 14, fontWeight: "600" },
-  sectionRule: { marginTop: 28, marginBottom: 8, borderTopColor: C.border, borderTopWidth: 1, paddingTop: 14 },
+  // hero: glowing orb + total
+  hero: { alignItems: "center", marginTop: 20 },
+  orbWrap: { width: 160, height: 150, alignItems: "center", justifyContent: "center" },
+  orbGlow: {
+    position: "absolute",
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: C.glowFaint,
+    shadowColor: C.amber,
+    shadowOpacity: 0.7,
+    shadowRadius: 40,
+    elevation: 24,
+  },
+  orb: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    shadowColor: C.amber,
+    shadowOpacity: 0.9,
+    shadowRadius: 30,
+    elevation: 16,
+  },
+  heroEye: { fontSize: 10, letterSpacing: 2, color: C.ink3, marginTop: 16, marginBottom: 6 },
+  heroNum: { fontSize: 56, fontWeight: "300", color: C.ink, letterSpacing: -2, lineHeight: 62 },
+  heroDate: { fontSize: 13, color: C.ink3, fontVariant: ["tabular-nums"] },
+  screenTimeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    backgroundColor: C.glass,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+
+  // quick action pills (Sleep / Focus / Rest style)
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 24,
+    paddingHorizontal: 8,
+  },
+  actionCol: { alignItems: "center", flex: 1 },
+  pillBtn: {
+    width: 88,
+    height: 52,
+    borderRadius: 999,
+    backgroundColor: C.glass,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pillLabel: { fontSize: 13, color: C.ink2, marginTop: 8, fontWeight: "500" },
+
+  // "My Limits" summary card
+  myAppsCard: {
+    backgroundColor: C.glass,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 20,
+    marginTop: 28,
+  },
+  myAppsHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  myAppsTitle: { fontSize: 16, fontWeight: "700", color: C.ink },
+  myAppsChev: { fontSize: 20, color: C.ink3 },
+  myAppsRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  shieldBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: C.glowFaint,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  myAppsMain: { fontSize: 16, fontWeight: "700", color: C.ink },
+  myAppsSub: { fontSize: 13, color: C.ink3, marginTop: 2 },
+
+  sectionRule: { marginTop: 28, marginBottom: 8, paddingTop: 14 },
   sectionLabel: { fontSize: 10, letterSpacing: 2, color: C.ink3 },
 
+  // bottom pill nav
+  nav: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 24,
+    alignItems: "center",
+  },
+  navPill: {
+    flexDirection: "row",
+    backgroundColor: C.navBg,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 6,
+    gap: 4,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  navItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  navItemActive: { backgroundColor: C.glassHi },
+  navLabel: { fontSize: 11, color: C.ink3, fontWeight: "500", marginTop: 2 },
+  navLabelActive: { color: C.ink },
+
   // app rows
-  row: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
   rowLeft: { flex: 1 },
   rowTop: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginBottom: 7 },
   rowLabel: { fontSize: 14, color: C.ink, flex: 1, marginRight: 8 },
   barTrack: { height: 3, backgroundColor: C.surf2, borderRadius: 99, overflow: "hidden" },
   barFill: { height: 3, backgroundColor: C.amber, borderRadius: 99 },
-  barFillAmber: { backgroundColor: "#E08C10" },
+  barFillAmber: { backgroundColor: C.flame },
   barFillRed: { backgroundColor: C.red },
   rowVal: { fontSize: 12.5, color: C.ink2, fontVariant: ["tabular-nums"] },
   rowValAmber: { color: C.amber },
@@ -683,28 +1049,28 @@ const s = StyleSheet.create({
 
   // cards (permission + optional desktop)
   card: {
-    backgroundColor: C.surf,
+    backgroundColor: C.glass,
     borderColor: C.border,
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 24,
+    padding: 20,
     marginBottom: 12,
   },
   cardTitle: { fontSize: 14, fontWeight: "600", color: C.ink, marginBottom: 6 },
   cardBody: { fontSize: 12.5, color: C.ink2, lineHeight: 18, marginBottom: 10 },
-  btn: { backgroundColor: C.ink, borderRadius: 10, paddingVertical: 12, alignItems: "center", marginTop: 4 },
-  btnText: { color: C.bg, fontSize: 13.5, fontWeight: "600" },
-  btnAlt: { backgroundColor: C.surf2, borderRadius: 10, paddingVertical: 12, alignItems: "center", marginTop: 8 },
+  btn: { backgroundColor: C.amber, borderRadius: 999, paddingVertical: 13, alignItems: "center", marginTop: 4 },
+  btnText: { color: C.onAccent, fontSize: 13.5, fontWeight: "700" },
+  btnAlt: { backgroundColor: C.surf2, borderRadius: 999, paddingVertical: 13, alignItems: "center", marginTop: 8 },
   btnAltText: { color: C.ink, fontSize: 13.5, fontWeight: "600" },
   btnGhost: { paddingVertical: 10, alignItems: "center" },
   btnGhostText: { color: C.ink2, fontSize: 12.5 },
   failHint: { fontSize: 11.5, color: C.red, lineHeight: 17, marginTop: 10 },
   orText: { fontSize: 11, color: C.ink3, textAlign: "center", marginVertical: 10 },
   input: {
-    backgroundColor: C.bg,
+    backgroundColor: C.surf,
     borderColor: C.border,
     borderWidth: 1,
-    borderRadius: 9,
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 13,
@@ -721,21 +1087,21 @@ const s = StyleSheet.create({
   optToggle: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: C.surf,
+    backgroundColor: C.glass,
     borderColor: C.border,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 999,
     paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingHorizontal: 18,
   },
   optToggleText: { flex: 1, fontSize: 13, color: C.ink2, marginLeft: 10 },
   optChevron: { fontSize: 16, color: C.ink3 },
   optCard: {
-    backgroundColor: C.surf,
+    backgroundColor: C.glass,
     borderColor: C.border,
     borderWidth: 1,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 24,
+    padding: 20,
   },
   optHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   optLabel: { fontSize: 10, letterSpacing: 1.5, color: C.ink3 },
@@ -762,5 +1128,5 @@ const s = StyleSheet.create({
   scanRoot: { flex: 1, backgroundColor: "#000", alignItems: "center", justifyContent: "center" },
   scanFrame: { width: 240, height: 240, borderColor: "#fff", borderWidth: 3, borderRadius: 20, backgroundColor: "transparent" },
   scanHint: { position: "absolute", top: 90, color: "#fff", fontSize: 14, textAlign: "center", paddingHorizontal: 30 },
-  scanCancel: { position: "absolute", bottom: 60, backgroundColor: "rgba(28,22,16,0.85)", borderRadius: 10, paddingVertical: 12, paddingHorizontal: 40 },
+  scanCancel: { position: "absolute", bottom: 60, backgroundColor: C.amber, borderRadius: 999, paddingVertical: 12, paddingHorizontal: 40 },
 });

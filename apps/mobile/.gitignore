@@ -3,3 +3,6 @@ node_modules/
 *.apk
 /android/
 /ios/
+modules/*/android/build/
+modules/*/android/.gradle/
+modules/*/android/.cxx/

@@ -16,7 +16,9 @@ class BootReceiver : BroadcastReceiver() {
         val trigger = intent.action
         if (trigger != Intent.ACTION_BOOT_COMPLETED &&
             trigger != Intent.ACTION_MY_PACKAGE_REPLACED) return
-        if (LimitStore(context).getAllLimits().isEmpty()) return
+        val hasLimits    = LimitStore(context).getAllLimits().isNotEmpty()
+        val hasSchedules = ScheduleStore(context).getAllRules().any { it.enabled }
+        if (!hasLimits && !hasSchedules) return
 
         val svc = Intent(context, FocusBlockerService::class.java).apply {
             action = FocusBlockerService.ACTION_START_LIMITS_ONLY

@@ -1,14 +1,32 @@
-// Shared warm palette (Fraunces/DM Mono/Figtree elsewhere). Mirrors the tokens
-// used across the desktop dashboard so the brand feels consistent.
+// Dark "premium blocker" palette (Opal-inspired): near-black surfaces with a
+// green tint, mint accent used for glows, borders and CTAs. Key names are kept
+// from the old warm palette so screens don't need import changes — `amber` is
+// simply the accent slot.
 export const C = {
-  bg: "#F2EDE3",
-  surf: "#E9E3D7",
-  surf2: "#E0D9CB",
-  border: "rgba(24,18,8,0.09)",
-  ink: "#1C1610",
-  ink2: "#6B6256",
-  ink3: "#A8A098",
-  amber: "#B26A0A",
-  green: "#1D6B3F",
-  red: "#B5280A",
+  bg: "#070A08", // near-black with a green undertone (matches Opal refs)
+  surf: "#141A16",
+  surf2: "#1E2521",
+  border: "rgba(255,255,255,0.08)",
+  ink: "#F2F6F3",
+  ink2: "rgba(242,246,243,0.64)",
+  ink3: "rgba(242,246,243,0.40)",
+  amber: "#A9EEC8", // accent (mint) — dark text on top, see onAccent
+  green: "#7DE8A9",
+  red: "#F08573",
+
+  // Extra tokens for the dark design
+  onAccent: "#08130C", // text/icons placed on mint backgrounds
+  glass: "rgba(255,255,255,0.05)", // translucent card fill
+  glassHi: "rgba(255,255,255,0.09)",
+  glow: "rgba(169,238,200,0.32)", // mint glow (shadows, halos)
+  glowFaint: "rgba(169,238,200,0.10)", // radial card tint
+  navBg: "#141917", // bottom pill nav
+  flame: "#F5B96B", // streak / warning accent
 };
+
+// Shared gradient stops for mint CTA buttons (use with expo-linear-gradient,
+// horizontal: start {x:0,y:0} → end {x:1,y:0}).
+export const CTA_GRADIENT = [
+  "rgba(169,238,200,0.16)",
+  "rgba(169,238,200,0.55)",
+] as const;

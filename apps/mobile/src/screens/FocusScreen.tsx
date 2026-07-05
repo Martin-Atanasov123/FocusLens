@@ -14,8 +14,12 @@ import {
   Text,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 
-import { C } from "../theme";
+import { C, CTA_GRADIENT } from "../theme";
+import { AppIcon, useAppIcons } from "../components/AppIcon";
+import { PressableScale } from "../components/Motion";
 import {
   canDrawOverlays,
   isBlocking,
@@ -24,11 +28,22 @@ import {
   stopFocusSession,
 } from "../blocking/FocusBlocker";
 import { isSessionActive, loadRules, saveRules } from "../blocking/rules";
+import {
+  cancelPendingSession,
+  finalizePendingSession,
+  markSessionStarted,
+} from "../gamification/streaks";
+import {
+  cancelSessionEndNotification,
+  scheduleSessionEndNotification,
+} from "../notifications";
 import { todayUsageSeconds } from "../sync";
 
 type AppRow = { key: string; label: string };
 
-const DURATIONS = [25, 60, 120];
+const STEP_MIN = 5;
+const MIN_MINUTES = 5;
+const MAX_MINUTES = 240;
 
 function remainingLabel(untilMs: number): string {
   const s = Math.max(0, Math.floor((untilMs - Date.now()) / 1000));
@@ -40,6 +55,13 @@ function remainingLabel(untilMs: number): string {
   return `${sec}s`;
 }
 
+function durationLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  return minutes % 60 === 0
+    ? `${minutes / 60}h`
+    : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
 export default function FocusScreen({
   visible,
   onClose,
@@ -49,10 +71,12 @@ export default function FocusScreen({
 }) {
   const [apps, setApps] = useState<AppRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [minutes, setMinutes] = useState(25);
+  const [minutes, setMinutes] = useState(30);
   const [overlayOk, setOverlayOk] = useState(true);
   const [activeUntil, setActiveUntil] = useState<number | null>(null);
   const [, forceTick] = useState(0);
+
+  const appIcons = useAppIcons(apps.map((a) => a.key));
 
   // Load app list + restore any in-progress session when opened.
   useEffect(() => {
@@ -81,6 +105,8 @@ export default function FocusScreen({
     const id = setInterval(() => {
       if (Date.now() >= activeUntil) {
         setActiveUntil(null);
+        // Session ran to its deadline → credit the streak right away.
+        finalizePendingSession().catch(() => null);
       } else {
         forceTick((n) => n + 1);
       }
@@ -108,14 +134,23 @@ export default function FocusScreen({
     const until = Date.now() + minutes * 60_000;
     startFocusSession(packageNames, minutes);
     await saveRules({ packageNames, mode: "focusSession", until });
+    await markSessionStarted(until, minutes); // streak credit armed
+    scheduleSessionEndNotification(until, minutes).catch(() => {});
     setActiveUntil(until);
   }, [selected, minutes]);
 
   const stop = useCallback(async () => {
     stopFocusSession();
     await saveRules({ packageNames: [], mode: "focusSession" });
+    await cancelPendingSession(); // ended early — no streak credit
+    cancelSessionEndNotification().catch(() => {});
     setActiveUntil(null);
   }, []);
+
+  const stepDown = () => setMinutes((m) => Math.max(MIN_MINUTES, m - STEP_MIN));
+  const stepUp = () => setMinutes((m) => Math.min(MAX_MINUTES, m + STEP_MIN));
+
+  const clock = `${String(minutes).padStart(2, "0")}:00`;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -124,19 +159,23 @@ export default function FocusScreen({
           <Pressable onPress={onClose} hitSlop={12}>
             <Text style={s.back}>‹ Close</Text>
           </Pressable>
-          <Text style={s.title}>Focus</Text>
           <View style={{ width: 52 }} />
         </View>
+        <Text style={s.bigTitle}>Timer</Text>
 
         {activeUntil != null ? (
           <View style={s.activeWrap}>
             <Text style={s.activeEye}>FOCUS IN PROGRESS</Text>
-            <Text style={s.activeTime}>{remainingLabel(activeUntil)}</Text>
+            <View style={s.clockCard}>
+              <Text style={s.clockDigits} adjustsFontSizeToFit numberOfLines={1}>
+                {remainingLabel(activeUntil)}
+              </Text>
+            </View>
             <Text style={s.activeSub}>
               {selected.size} app{selected.size === 1 ? "" : "s"} paused. Blocked apps
               show a stay-focused screen until the timer ends.
             </Text>
-            <Pressable style={[s.btn, s.btnStop]} onPress={stop}>
+            <Pressable style={s.btnStop} onPress={stop}>
               <Text style={s.btnStopText}>End session</Text>
             </Pressable>
           </View>
@@ -151,26 +190,58 @@ export default function FocusScreen({
               </Pressable>
             )}
 
-            <Text style={s.section}>Duration</Text>
-            <View style={s.durRow}>
-              {DURATIONS.map((d) => (
-                <Pressable
-                  key={d}
-                  style={[s.dur, minutes === d && s.durOn]}
-                  onPress={() => setMinutes(d)}
-                >
-                  <Text style={[s.durText, minutes === d && s.durTextOn]}>
-                    {d < 60 ? `${d}m` : `${d / 60}h`}
-                  </Text>
-                </Pressable>
-              ))}
+            {/* LCD-style duration display */}
+            <View style={s.clockCard}>
+              <Text style={s.clockDigits}>{clock}</Text>
             </View>
 
-            <Text style={s.section}>Apps to pause</Text>
+            {/* − / duration / + stepper */}
+            <View style={s.stepRow}>
+              <PressableScale style={s.stepBtn} scaleTo={0.88} onPress={stepDown}>
+                <Text style={s.stepBtnText}>−</Text>
+              </PressableScale>
+              <View style={s.stepValue}>
+                <Text style={s.stepValueText}>{durationLabel(minutes)}</Text>
+              </View>
+              <PressableScale style={s.stepBtn} scaleTo={0.88} onPress={stepUp}>
+                <Text style={s.stepBtnText}>＋</Text>
+              </PressableScale>
+            </View>
+
+            {/* Start CTA */}
+            <PressableScale
+              onPress={start}
+              disabled={selected.size === 0}
+              scaleTo={0.97}
+              style={selected.size === 0 ? s.startDisabled : undefined}
+            >
+              <LinearGradient
+                colors={[...CTA_GRADIENT]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={s.startBtn}
+              >
+                <Ionicons name="play" size={17} color={C.ink} />
+                <Text style={s.startBtnText}>Start</Text>
+              </LinearGradient>
+            </PressableScale>
+
+            <View style={s.blockedChipWrap}>
+              <View style={s.blockedChip}>
+                <Ionicons name="shield-half-outline" size={14} color={C.amber} />
+                <Text style={s.blockedChipText}>
+                  {selected.size > 0
+                    ? `${selected.size} app${selected.size === 1 ? "" : "s"} to block`
+                    : "Pick apps to block below"}
+                </Text>
+              </View>
+            </View>
+
             <FlatList
               style={{ flex: 1 }}
               data={apps}
               keyExtractor={(a) => a.key}
+              showsVerticalScrollIndicator={false}
               ListEmptyComponent={
                 <Text style={s.empty}>
                   No tracked apps yet. Use your phone a bit, then come back.
@@ -183,6 +254,7 @@ export default function FocusScreen({
                     <View style={[s.check, on && s.checkOn]}>
                       {on && <Text style={s.checkMark}>✓</Text>}
                     </View>
+                    <AppIcon uri={appIcons[item.key]} label={item.label} size={32} />
                     <Text style={s.appLabel} numberOfLines={1}>
                       {item.label}
                     </Text>
@@ -190,16 +262,6 @@ export default function FocusScreen({
                 );
               }}
             />
-
-            <Pressable
-              style={[s.btn, selected.size === 0 && s.btnDisabled]}
-              onPress={start}
-              disabled={selected.size === 0}
-            >
-              <Text style={s.btnText}>
-                Start focus · {minutes < 60 ? `${minutes}m` : `${minutes / 60}h`}
-              </Text>
-            </Pressable>
           </>
         )}
       </View>
@@ -209,30 +271,108 @@ export default function FocusScreen({
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 18, paddingTop: 52 },
-  bar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  bar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   back: { color: C.amber, fontSize: 16 },
-  title: { color: C.ink, fontSize: 18, fontWeight: "600" },
-  section: { color: C.ink2, fontSize: 13, fontWeight: "600", marginTop: 18, marginBottom: 8 },
-  durRow: { flexDirection: "row", gap: 10 },
-  dur: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: C.surf, alignItems: "center", borderWidth: 1, borderColor: C.border },
-  durOn: { backgroundColor: C.amber, borderColor: C.amber },
-  durText: { color: C.ink2, fontSize: 15, fontWeight: "600" },
-  durTextOn: { color: "#fff" },
+  bigTitle: { color: C.ink, fontSize: 34, fontWeight: "800", marginTop: 4, marginBottom: 16 },
+
+  // LCD clock display
+  clockCard: {
+    backgroundColor: "#10241A",
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingVertical: 28,
+    paddingHorizontal: 32,
+    alignSelf: "stretch",
+    alignItems: "center",
+    shadowColor: C.amber,
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  clockDigits: {
+    color: C.amber,
+    fontSize: 58,
+    fontWeight: "200",
+    letterSpacing: 6,
+    fontVariant: ["tabular-nums"],
+  },
+
+  // stepper
+  stepRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 20,
+  },
+  stepBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.glass,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBtnText: { color: C.ink, fontSize: 26, fontWeight: "300", lineHeight: 30 },
+  stepValue: {
+    flex: 1,
+    maxWidth: 200,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.glass,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepValueText: { color: C.ink, fontSize: 24, fontWeight: "700" },
+
+  // start CTA
+  startBtn: {
+    marginTop: 16,
+    borderRadius: 999,
+    paddingVertical: 17,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: C.glow,
+  },
+  startBtnText: { color: C.ink, fontSize: 17, fontWeight: "700" },
+  startDisabled: { opacity: 0.45 },
+
+  // blocked-apps chip
+  blockedChipWrap: { alignItems: "center", marginTop: 14, marginBottom: 4 },
+  blockedChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    backgroundColor: C.glass,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+  },
+  blockedChipText: { color: C.ink2, fontSize: 13.5, fontWeight: "600" },
+
+  // app list
   appRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: C.border },
-  check: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: C.ink3, alignItems: "center", justifyContent: "center" },
-  checkOn: { backgroundColor: C.green, borderColor: C.green },
-  checkMark: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  check: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: C.ink3, alignItems: "center", justifyContent: "center" },
+  checkOn: { backgroundColor: C.amber, borderColor: C.amber },
+  checkMark: { color: C.onAccent, fontSize: 14, fontWeight: "700" },
   appLabel: { color: C.ink, fontSize: 15, flex: 1 },
   empty: { color: C.ink3, textAlign: "center", paddingVertical: 40, fontSize: 14 },
-  btn: { backgroundColor: C.amber, paddingVertical: 16, borderRadius: 12, alignItems: "center", marginVertical: 16 },
-  btnDisabled: { backgroundColor: C.ink3, opacity: 0.6 },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  btnStop: { backgroundColor: C.red },
-  btnStopText: { color: "#fff", fontSize: 16, fontWeight: "700" },
-  warn: { backgroundColor: "#FBEFD6", borderRadius: 10, padding: 12, marginTop: 12, borderWidth: 1, borderColor: C.amber },
-  warnText: { color: "#7A4A06", fontSize: 13, lineHeight: 18 },
-  activeWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20 },
+
+  btnStop: { backgroundColor: "rgba(240,133,115,0.16)", borderWidth: 1, borderColor: C.red, paddingVertical: 15, paddingHorizontal: 48, borderRadius: 999, alignItems: "center" },
+  btnStopText: { color: C.red, fontSize: 16, fontWeight: "700" },
+  warn: { backgroundColor: "rgba(245,185,107,0.12)", borderRadius: 16, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: C.flame },
+  warnText: { color: C.flame, fontSize: 13, lineHeight: 18 },
+  activeWrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 20, gap: 20 },
   activeEye: { color: C.amber, fontSize: 12, letterSpacing: 1.5, fontWeight: "700" },
-  activeTime: { color: C.ink, fontSize: 56, fontWeight: "800", marginVertical: 8 },
-  activeSub: { color: C.ink2, fontSize: 14, textAlign: "center", lineHeight: 20, marginBottom: 28 },
+  activeSub: { color: C.ink2, fontSize: 14, textAlign: "center", lineHeight: 20 },
 });

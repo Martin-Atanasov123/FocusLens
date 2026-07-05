@@ -102,3 +102,93 @@ export function getBlockEventCount(): number {
     return 0;
   }
 }
+
+// ---- Scheduled rules ---------------------------------------------------------
+
+export type ScheduleRuleType = "schedule" | "openLimit";
+
+export interface ScheduleRule {
+  id: string;
+  /** User-visible name, e.g. "Work Time". */
+  name: string;
+  /** "schedule" (time window) or "openLimit" (opens/day cap). Defaults to "schedule". */
+  type?: ScheduleRuleType;
+  packageNames: string[];
+  /** ISO day-of-week: 1=Monday .. 7=Sunday. */
+  daysOfWeek: number[];
+  /** "schedule" only: minutes since local midnight. Overnight (start > end) allowed. */
+  startMinute?: number;
+  endMinute?: number;
+  /** "openLimit" only: max foreground opens per day, and seconds allowed per open. */
+  maxOpens?: number;
+  perOpenSeconds?: number;
+  /** No joker/reset escape hatch when true ("Hard mode" / no "Resets allowed"). */
+  strict?: boolean;
+  enabled: boolean;
+}
+
+/** Create or update a recurring scheduled block rule. Starts the service. */
+export function setScheduleRule(rule: ScheduleRule): void {
+  try {
+    FocusBlockerModule.setScheduleRule({
+      type: "schedule",
+      startMinute: 0,
+      endMinute: 0,
+      maxOpens: 0,
+      perOpenSeconds: 0,
+      strict: false,
+      ...rule,
+    });
+  } catch {
+    /* no-op on web/simulator */
+  }
+}
+
+/** Delete a scheduled rule. */
+export function removeScheduleRule(id: string): void {
+  try {
+    FocusBlockerModule.removeScheduleRule(id);
+  } catch {
+    /* no-op */
+  }
+}
+
+/** Toggle a rule without losing its configuration. */
+export function setScheduleEnabled(id: string, enabled: boolean): void {
+  try {
+    FocusBlockerModule.setScheduleEnabled(id, enabled);
+  } catch {
+    /* no-op */
+  }
+}
+
+/** All configured scheduled rules. */
+export function getScheduleRules(): ScheduleRule[] {
+  try {
+    return FocusBlockerModule.getScheduleRules() as ScheduleRule[];
+  } catch {
+    return [];
+  }
+}
+
+/** Today's recorded opens for an Open Limit rule + package. */
+export function getOpenCountToday(ruleId: string, packageName: string): number {
+  try {
+    return FocusBlockerModule.getOpenCountToday(ruleId, packageName);
+  } catch {
+    return 0;
+  }
+}
+
+// ---- App icons -----------------------------------------------------------------
+
+/** Real launcher icons as base64 PNG data-URIs, keyed by package name. */
+export async function getAppIcons(
+  packageNames: string[]
+): Promise<Record<string, string>> {
+  try {
+    return await FocusBlockerModule.getAppIcons(packageNames);
+  } catch {
+    return {};
+  }
+}

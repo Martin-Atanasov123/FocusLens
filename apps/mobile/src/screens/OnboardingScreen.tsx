@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
 import {
   AppState,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import * as Application from "expo-application";
@@ -34,17 +37,40 @@ const POPULAR_APPS = [
 export default function OnboardingScreen({
   onComplete,
 }: {
-  onComplete: () => void;
+  /** Called with the user's (possibly empty) first name. */
+  onComplete: (name: string) => void;
 }) {
   const [step, setStep] = useState<Step>(1);
+  const [name, setName] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [usageGranted, setUsageGranted] = useState(false);
   const [overlayGranted, setOverlayGranted] = useState(false);
+  const [notifGranted, setNotifGranted] = useState(false);
 
-  // Enter step 3: check overlay immediately
+  // Enter step 3: check overlay + notification immediately
   useEffect(() => {
-    if (step === 3) setOverlayGranted(canDrawOverlays());
+    if (step !== 3) return;
+    setOverlayGranted(canDrawOverlays());
+    // POST_NOTIFICATIONS only exists on Android 13+ (API 33)
+    if (Platform.OS === "android" && Platform.Version >= 33) {
+      PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+      ).then(setNotifGranted);
+    } else {
+      setNotifGranted(true); // older Android: always allowed
+    }
   }, [step]);
+
+  const requestNotifPermission = async () => {
+    if (Platform.OS !== "android" || Platform.Version < 33) {
+      setNotifGranted(true);
+      return;
+    }
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+    );
+    setNotifGranted(result === PermissionsAndroid.RESULTS.GRANTED);
+  };
 
   // Steps 2 & 3: detect return from system settings
   useEffect(() => {
@@ -113,6 +139,16 @@ export default function OnboardingScreen({
           <Text style={s.sub}>
             Pick the apps you want to spend less time on.
           </Text>
+          <TextInput
+            style={s.nameInput}
+            placeholder="Your first name (optional)"
+            placeholderTextColor={C.ink3}
+            value={name}
+            onChangeText={setName}
+            maxLength={24}
+            autoCapitalize="words"
+            returnKeyType="done"
+          />
           <View style={s.grid}>
             {POPULAR_APPS.map((label) => {
               const on = picked.has(label);
@@ -141,7 +177,7 @@ export default function OnboardingScreen({
       {/* ── Step 2: usage access ── */}
       {step === 2 && (
         <>
-          <Text style={s.head}>See your real screen time 📊</Text>
+          <Text style={s.head}>See your real screen time</Text>
           <Text style={s.sub}>
             FocusLens reads how long you use each app — the same data Android's
             own Digital Wellbeing uses. Everything stays on your phone.
@@ -187,9 +223,29 @@ export default function OnboardingScreen({
         <>
           <Text style={s.head}>Make limits stick 🛡️</Text>
           <Text style={s.sub}>
-            Two permissions let FocusLens show the block screen and keep running
-            when your phone is locked. You can always grant these later in Settings.
+            Three permissions let FocusLens send alerts, show the block screen,
+            and keep running when your phone is locked. You can grant these later
+            in Settings if needed.
           </Text>
+
+          <View style={s.card}>
+            <View style={s.permRow}>
+              <View style={s.permInfo}>
+                <Text style={s.cardLabel}>NOTIFICATIONS</Text>
+                <Text style={s.cardBody}>
+                  Shows the persistent "monitoring active" status and alerts
+                  when you're close to a daily limit.
+                </Text>
+              </View>
+              {notifGranted ? (
+                <Text style={s.grantedBadge}>✓</Text>
+              ) : (
+                <Pressable style={s.permBtn} onPress={requestNotifPermission}>
+                  <Text style={s.permBtnText}>Allow</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
 
           <View style={s.card}>
             <View style={s.permRow}>
@@ -224,7 +280,7 @@ export default function OnboardingScreen({
             </View>
           </View>
 
-          <Pressable style={[s.btn, s.btnLetsGo]} onPress={onComplete}>
+          <Pressable style={[s.btn, s.btnLetsGo]} onPress={() => onComplete(name.trim())}>
             <Text style={s.btnText}>Let's go 🚀</Text>
           </Pressable>
         </>
@@ -260,6 +316,18 @@ const s = StyleSheet.create({
   },
   sub: { fontSize: 14, color: C.ink2, lineHeight: 21, marginBottom: 24 },
 
+  nameInput: {
+    backgroundColor: C.glass,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: C.ink,
+    marginBottom: 20,
+  },
+
   // app chips grid
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 28 },
   chip: {
@@ -272,15 +340,15 @@ const s = StyleSheet.create({
   },
   chipOn: { backgroundColor: C.amber, borderColor: C.amber },
   chipText: { fontSize: 13.5, color: C.ink2, fontWeight: "500" },
-  chipTextOn: { color: "#fff", fontWeight: "600" },
+  chipTextOn: { color: C.onAccent, fontWeight: "600" },
 
   // permission cards
   card: {
-    backgroundColor: C.surf,
-    borderRadius: 14,
+    backgroundColor: C.glass,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 16,
+    padding: 18,
     marginBottom: 12,
   },
   cardLabel: {
@@ -298,12 +366,12 @@ const s = StyleSheet.create({
   permRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   permInfo: { flex: 1 },
   permBtn: {
-    backgroundColor: C.ink,
-    borderRadius: 8,
+    backgroundColor: C.amber,
+    borderRadius: 999,
     paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
   },
-  permBtnText: { color: C.bg, fontSize: 13, fontWeight: "600" },
+  permBtnText: { color: C.onAccent, fontSize: 13, fontWeight: "700" },
   grantedRow: { paddingVertical: 6, alignItems: "flex-start" },
   grantedText: { color: C.green, fontSize: 14, fontWeight: "600" },
   grantedBadge: { color: C.green, fontSize: 22, fontWeight: "700" },
@@ -312,12 +380,12 @@ const s = StyleSheet.create({
   btn: {
     backgroundColor: C.amber,
     paddingVertical: 15,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: "center",
     marginTop: 4,
     marginBottom: 8,
   },
-  btnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  btnText: { color: C.onAccent, fontSize: 16, fontWeight: "700" },
   btnOff: { backgroundColor: C.surf2 },
   btnOffText: { color: C.ink3 },
   btnLetsGo: { marginTop: 8 },
