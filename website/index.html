@@ -161,6 +161,8 @@ nav{
   text-decoration:none;color:var(--ink);transition:border-color .15s,box-shadow .15s;
 }
 .dl-card:hover{border-color:var(--ink-3);box-shadow:0 4px 20px rgba(24,18,8,.06)}
+.dl-card-primary{border-color:var(--amber);background:var(--amber-bg)}
+.dl-card-primary:hover{border-color:var(--amber);box-shadow:0 4px 20px rgba(178,106,10,.12)}
 .dl-icon{
   width:44px;height:44px;border-radius:10px;
   background:var(--surf-2);display:flex;align-items:center;justify-content:center;
@@ -291,7 +293,7 @@ footer{
       <h1>Your screen.<br><em>Your data.</em></h1>
       <p class="hero-sub">FocusLens tracks how you spend time on your computer and phone — entirely on your device. No cloud, no subscriptions, no data ever leaving your machine.</p>
       <div class="hero-actions">
-        <a href="#download" class="btn-primary">↓ Download for Windows</a>
+        <a href="https://github.com/Martin-Atanasov123/FocusLens/releases/download/v0.2.0/FocusLens.exe" class="btn-primary">↓ Download for Windows</a>
         <a href="https://github.com/Martin-Atanasov123/FocusLens" class="btn-ghost" target="_blank" rel="noopener">View source →</a>
       </div>
       <div class="badges" style="margin-top:20px">
@@ -353,21 +355,21 @@ footer{
   <section class="download" id="download">
     <div class="section-label">Get started</div>
     <h2>Download FocusLens</h2>
-    <p class="dl-sub">Packaged installers coming soon. For now, run from source — takes under 2 minutes.</p>
+    <p class="dl-sub">Single .exe — no installer, no admin rights, no cloud. Just run it.</p>
     <div class="dl-grid">
-      <a href="https://github.com/Martin-Atanasov123/FocusLens/releases" class="dl-card" target="_blank" rel="noopener">
+      <a href="https://github.com/Martin-Atanasov123/FocusLens/releases/download/v0.2.0/FocusLens.exe" class="dl-card dl-card-primary" target="_blank" rel="noopener">
         <div class="dl-icon">🪟</div>
         <div class="dl-info">
           <div class="dl-os">Windows</div>
-          <div class="dl-ver">Releases page →</div>
+          <div class="dl-ver">FocusLens.exe — v0.2.0 ↓</div>
         </div>
-        <div class="dl-arrow">↗</div>
+        <div class="dl-arrow">↓</div>
       </a>
       <a href="https://github.com/Martin-Atanasov123/FocusLens/releases" class="dl-card" target="_blank" rel="noopener">
         <div class="dl-icon">🍎</div>
         <div class="dl-info">
           <div class="dl-os">macOS</div>
-          <div class="dl-ver">Releases page →</div>
+          <div class="dl-ver">Run from source →</div>
         </div>
         <div class="dl-arrow">↗</div>
       </a>
@@ -375,7 +377,7 @@ footer{
         <div class="dl-icon">🐧</div>
         <div class="dl-info">
           <div class="dl-os">Linux</div>
-          <div class="dl-ver">Releases page →</div>
+          <div class="dl-ver">Run from source →</div>
         </div>
         <div class="dl-arrow">↗</div>
       </a>
