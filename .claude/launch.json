@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "website",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-s", "website", "-l", "3000", "--no-clipboard"],
+      "port": 3000
+    },
+    {
       "name": "desktop-dashboard",
       "runtimeExecutable": "python",
       "runtimeArgs": ["run.py"],
