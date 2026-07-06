@@ -57,6 +57,10 @@ export interface FocusBlockerNativeModule {
   getScheduleRules(): ScheduleRuleData[];
   /** Today's recorded opens for an Open Limit rule + package (live "N of M"). */
   getOpenCountToday(ruleId: string, packageName: string): number;
+  /** Replace the global Always-Allowed whitelist (packages never blocked). */
+  setAllowedApps(packageNames: string[]): void;
+  /** Current Always-Allowed whitelist. */
+  getAllowedApps(): string[];
   /** Launcher icons as base64 PNG data-URIs, keyed by package (missing = no icon). */
   getAppIcons(packageNames: string[]): Promise<Record<string, string>>;
   /** Every launchable installed app as {packageName, appName}, sorted by label. */

@@ -1,25 +1,30 @@
 /**
  * Focus Score — the single number the whole app orbits around.
  *
- * Design (loss-framed, Opal-style): you START each day at 100 and the day's
- * behavior erodes or defends it:
+ * A composite of three sub-scores (Opal blends Sleep/Focus/Rest; we blend the
+ * signals we actually have), so it is realistic — a perfect 100 is unreachable
+ * with any real usage ("nobody's perfect"), and even a great day lands ~90s.
  *
- *   screen penalty  — first 2 h of screen time are free; every hour beyond
- *                     costs 8 pts (capped at −40). Heavy days hurt visibly.
- *   limit penalty   — each blown daily limit −15, each app near its cap −5
- *                     (capped at −45). Breaking your own rules hurts most.
- *   focus bonus     — each COMPLETED focus session earns +5 (capped at +15),
- *                     so a bad screen day can still be partially redeemed by
- *                     deliberate focus. Score never exceeds 100.
+ *   focus sub  (60% weight) — driven by total screen time on a smooth curve:
+ *                 0h→100, ~2h→88, 4h→76, 6h→64, 8h→52, 12h→28 (floor 15).
+ *                 −6/hour, never a "free" allowance, so it always dips.
+ *   distraction sub (25%)   — share of screen time in distracting apps
+ *                 (social/video/games). All-focused day → 100; a day that is
+ *                 mostly doomscrolling → ~30.
+ *   discipline sub (15%)    — limits respected: starts at 100, −25 per blown
+ *                 limit, −10 per near-cap.
  *
- * Pure function — no I/O — so it is trivially unit-testable and can run in
- * both the app and any future widget/notification context.
+ * Then completed focus sessions add a small redemption bonus (+4 each, cap 12),
+ * and the result is clamped to 1..99 — there is always something to lose and
+ * always a path back. Pure function (no I/O) so it stays unit-testable.
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export interface ScoreInputs {
   /** Total foreground seconds across all apps today. */
   totalScreenSecs: number;
+  /** Foreground seconds today spent in distracting apps (social/video/games). */
+  distractionSecs: number;
   /** Daily limits currently exceeded. */
   exceededCount: number;
   /** Daily limits at ≥80% but not exceeded. */
@@ -30,19 +35,20 @@ export interface ScoreInputs {
 
 export interface ScoreBreakdown {
   score: number;
-  screenPenalty: number;
-  limitPenalty: number;
+  focusSub: number;
+  distractionSub: number;
+  disciplineSub: number;
   focusBonus: number;
 }
 
-const FREE_SCREEN_HOURS = 2;
-const PENALTY_PER_HOUR = 8;
-const MAX_SCREEN_PENALTY = 40;
-const PENALTY_EXCEEDED = 15;
-const PENALTY_NEAR_CAP = 5;
-const MAX_LIMIT_PENALTY = 45;
-const BONUS_PER_SESSION = 5;
-const MAX_FOCUS_BONUS = 15;
+const W_FOCUS = 0.6;
+const W_DISTRACTION = 0.25;
+const W_DISCIPLINE = 0.15;
+
+const SCREEN_PENALTY_PER_HOUR = 6;
+const FOCUS_FLOOR = 15;
+const BONUS_PER_SESSION = 4;
+const MAX_FOCUS_BONUS = 12;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
@@ -50,24 +56,50 @@ function clamp(v: number, lo: number, hi: number): number {
 
 export function computeScore({
   totalScreenSecs,
+  distractionSecs,
   exceededCount,
   nearCapCount,
   sessionsToday,
 }: ScoreInputs): ScoreBreakdown {
   const hours = totalScreenSecs / 3600;
-  const screenPenalty = clamp(
-    Math.round((hours - FREE_SCREEN_HOURS) * PENALTY_PER_HOUR),
-    0,
-    MAX_SCREEN_PENALTY
-  );
-  const limitPenalty = clamp(
-    exceededCount * PENALTY_EXCEEDED + nearCapCount * PENALTY_NEAR_CAP,
-    0,
-    MAX_LIMIT_PENALTY
-  );
+
+  // Focus sub — smooth decline with screen time; never a flat 100 in practice.
+  const focusSub = clamp(100 - hours * SCREEN_PENALTY_PER_HOUR, FOCUS_FLOOR, 100);
+
+  // Distraction sub — penalise the *share* of time that is distracting, scaled
+  // by how much screen time there is (a 10-min distracted day barely matters).
+  const distractionRatio = totalScreenSecs > 0 ? distractionSecs / totalScreenSecs : 0;
+  const distractionSub = clamp(100 - distractionRatio * 90, 10, 100);
+
+  // Discipline sub — limits respected.
+  const disciplineSub = clamp(100 - exceededCount * 25 - nearCapCount * 10, 0, 100);
+
   const focusBonus = clamp(sessionsToday * BONUS_PER_SESSION, 0, MAX_FOCUS_BONUS);
-  const score = clamp(100 - screenPenalty - limitPenalty + focusBonus, 0, 100);
-  return { score, screenPenalty, limitPenalty, focusBonus };
+
+  const weighted =
+    focusSub * W_FOCUS + distractionSub * W_DISTRACTION + disciplineSub * W_DISCIPLINE;
+  const score = clamp(Math.round(weighted + focusBonus), 1, 99);
+
+  return { score, focusSub, distractionSub, disciplineSub, focusBonus };
+}
+
+/**
+ * Package heuristic for "distracting" apps (social, video, games). Used to
+ * split screen time for the distraction sub-score. Prefix/substring match so
+ * it catches regional variants without an exhaustive list.
+ */
+const DISTRACTING = [
+  "instagram", "tiktok", "musically", "youtube", "facebook", "katana", "snapchat",
+  "reddit", "twitter", "com.twitter", "com.x.", ".x.android", "netflix", "primevideo",
+  "disney", "hbo", "twitch", "pinterest", "tinder", "bumble", "9gag", "telegram",
+  "discord", "whatsapp", "messenger", "vk.", "game", "supercell", "clashof", "roblox",
+  "minecraft", "pubg", "candycrush", "king.", "playrix",
+];
+
+/** True if `pkg` looks like a distracting (social/video/games) app. */
+export function isDistractingPkg(pkg: string): boolean {
+  const p = pkg.toLowerCase();
+  return DISTRACTING.some((frag) => p.includes(frag));
 }
 
 // ---- Score history (for profile trends / weekly report) -----------------------

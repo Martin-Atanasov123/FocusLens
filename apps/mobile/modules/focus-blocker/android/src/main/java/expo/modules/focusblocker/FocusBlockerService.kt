@@ -62,6 +62,8 @@ class FocusBlockerService : Service() {
     // Scheduled rules are JSON-parsed from prefs, so cache them and refresh on
     // the 30 s limit cadence (and whenever JS mutates them via ACTION_START_LIMITS_ONLY).
     private var schedules: List<ScheduleRule> = emptyList()
+    // Always-Allowed whitelist, cached alongside the rules.
+    private var allowed: Set<String> = emptySet()
 
     // Focus-session state
     private var blocked: Set<String> = emptySet()
@@ -117,6 +119,7 @@ class FocusBlockerService : Service() {
 
     private fun ensureRunning() {
         schedules = scheduleStore.getAllRules()
+        allowed = AllowStore.getAllowed(this)
         if (!isRunning) {
             startForeground(NOTIF_ID, buildNotification())
             isRunning = true
@@ -147,6 +150,9 @@ class FocusBlockerService : Service() {
         updateForeground(now)
         val pkg = currentForeground ?: return
         if (pkg == packageName) return
+
+        // Always-Allowed whitelist: never block these, whatever the rules say.
+        if (allowed.contains(pkg)) return
 
         // Arm an immediate limit check when the user switches to a different app
         val isNewSwitch = pkg != prevForeground
@@ -201,6 +207,7 @@ class FocusBlockerService : Service() {
         if (limitTick >= LIMIT_CHECK_EVERY) {
             limitTick = 0
             schedules = scheduleStore.getAllRules()  // refresh cache on the same cadence
+            allowed = AllowStore.getAllowed(this)
             checkLimit(pkg, now)
         }
     }

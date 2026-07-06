@@ -165,7 +165,7 @@ export default function SchedulesScreen({
   const [appSearch, setAppSearch] = useState("");
 
   const appIcons = useAppIcons([
-    ...apps.slice(0, 40).map((a) => a.key),
+    ...apps.map((a) => a.key), // all apps — cache makes this a one-time cost
     ...rules.flatMap((r) => r.packageNames),
   ]);
 

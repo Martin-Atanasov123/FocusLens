@@ -214,6 +214,17 @@ class FocusBlockerModule : Module() {
             OpenLimitTracker.todayCount(context, ruleId, packageName)
         }
 
+        // ---- Always-Allowed whitelist ---------------------------------------
+
+        Function("setAllowedApps") { packageNames: List<String> ->
+            AllowStore.setAllowed(context, packageNames.toSet())
+            kickService()
+        }
+
+        Function("getAllowedApps") {
+            AllowStore.getAllowed(context).toList()
+        }
+
         // ---- Paywall: blocking-event counter -------------------------------
 
         Function("getBlockEventCount") { BlockStats.count(context) }

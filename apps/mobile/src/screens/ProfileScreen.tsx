@@ -23,6 +23,28 @@ import {
   getTotals,
   Streak,
 } from "../gamification/streaks";
+import { getScoreHistory } from "../gamification/score";
+
+type DayScore = { label: string; score: number | null; isToday: boolean };
+
+const DOW = ["S", "M", "T", "W", "T", "F", "S"]; // JS getDay(): 0=Sun
+
+/** Build the last 7 calendar days (oldest→today) from the stored history map. */
+function lastSevenDays(history: Record<string, number>): DayScore[] {
+  const out: DayScore[] = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    out.push({
+      label: DOW[d.getDay()],
+      score: key in history ? history[key] : null,
+      isToday: i === 0,
+    });
+  }
+  return out;
+}
 
 export default function ProfileScreen({
   visible,
@@ -36,13 +58,19 @@ export default function ProfileScreen({
   const [streak, setStreak] = useState<Streak>({ current: 0, best: 0, lastGoodDay: "" });
   const [totals, setTotals] = useState<FocusTotals>({ sessions: 0, minutes: 0 });
   const [gems, setGems] = useState<Gem[]>([]);
+  const [week, setWeek] = useState<DayScore[]>([]);
 
   useEffect(() => {
     if (!visible) return;
     (async () => {
-      const [st, tot] = await Promise.all([getStreak(), getTotals()]);
+      const [st, tot, hist] = await Promise.all([
+        getStreak(),
+        getTotals(),
+        getScoreHistory(),
+      ]);
       setStreak(st);
       setTotals(tot);
+      setWeek(lastSevenDays(hist));
       setGems(
         computeGems({
           totals: tot,
@@ -56,6 +84,13 @@ export default function ProfileScreen({
 
   const focusHours = Math.floor(totals.minutes / 60);
   const unlockedCount = gems.filter((g) => g.unlocked).length;
+
+  const weekScores = week.filter((d) => d.score != null).map((d) => d.score as number);
+  const weekAvg =
+    weekScores.length > 0
+      ? Math.round(weekScores.reduce((a, b) => a + b, 0) / weekScores.length)
+      : null;
+  const barColor = (v: number) => (v >= 80 ? C.amber : v >= 50 ? C.flame : C.red);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -105,6 +140,49 @@ export default function ProfileScreen({
               {totals.sessions} session{totals.sessions === 1 ? "" : "s"} completed
             </Text>
           )}
+
+          {/* This week — Focus Score history */}
+          <View style={s.weekHead}>
+            <Text style={s.sectionTitle}>This week</Text>
+            {weekAvg != null && (
+              <View style={s.avgPill}>
+                <Text style={s.avgPillText}>avg {weekAvg}</Text>
+              </View>
+            )}
+          </View>
+          <View style={s.chartCard}>
+            <View style={s.chart}>
+              {week.map((d, i) => (
+                <View key={i} style={s.barCol}>
+                  <View style={s.barTrack}>
+                    {d.score != null ? (
+                      <View
+                        style={[
+                          s.barFill,
+                          {
+                            height: `${Math.max(4, d.score)}%`,
+                            backgroundColor: barColor(d.score),
+                          },
+                          d.isToday && s.barToday,
+                        ]}
+                      />
+                    ) : (
+                      <View style={s.barEmpty} />
+                    )}
+                  </View>
+                  <Text style={[s.barVal, d.score == null && s.barValMuted]}>
+                    {d.score != null ? d.score : "–"}
+                  </Text>
+                  <Text style={[s.barDay, d.isToday && s.barDayToday]}>{d.label}</Text>
+                </View>
+              ))}
+            </View>
+            {weekAvg == null && (
+              <Text style={s.chartEmpty}>
+                Your history builds day by day — check back tomorrow. 🌱
+              </Text>
+            )}
+          </View>
 
           {/* Gemstones */}
           <Text style={s.sectionTitle}>Gemstones</Text>
@@ -170,6 +248,49 @@ const s = StyleSheet.create({
   bestNote: { color: C.ink3, fontSize: 12.5, textAlign: "center", marginTop: 6 },
 
   sectionTitle: { color: C.ink, fontSize: 18, fontWeight: "700", marginTop: 32, marginBottom: 14 },
+
+  // weekly score chart
+  weekHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  avgPill: {
+    backgroundColor: C.glowFaint,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 24,
+  },
+  avgPillText: { color: C.amber, fontSize: 12.5, fontWeight: "700", fontVariant: ["tabular-nums"] },
+  chartCard: {
+    backgroundColor: C.glass,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 18,
+  },
+  chart: { flexDirection: "row", alignItems: "flex-end", height: 140, gap: 8 },
+  barCol: { flex: 1, alignItems: "center" },
+  barTrack: {
+    width: "100%",
+    height: 104,
+    backgroundColor: C.surf,
+    borderRadius: 8,
+    justifyContent: "flex-end",
+    overflow: "hidden",
+  },
+  barFill: { width: "100%", borderRadius: 8 },
+  barToday: { shadowColor: C.amber, shadowOpacity: 0.7, shadowRadius: 10, elevation: 6 },
+  barEmpty: { width: "100%", height: 3, backgroundColor: C.border },
+  barVal: {
+    color: C.ink2,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 6,
+    fontVariant: ["tabular-nums"],
+  },
+  barValMuted: { color: C.ink3, fontWeight: "400" },
+  barDay: { color: C.ink3, fontSize: 11, marginTop: 2 },
+  barDayToday: { color: C.amber, fontWeight: "700" },
+  chartEmpty: { color: C.ink3, fontSize: 12.5, textAlign: "center", marginTop: 14 },
+
   gemGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   gemCard: {
     width: "47%",

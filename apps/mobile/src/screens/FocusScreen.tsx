@@ -12,6 +12,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -38,7 +39,7 @@ import {
   cancelSessionEndNotification,
   scheduleSessionEndNotification,
 } from "../notifications";
-import { todayUsageSeconds } from "../sync";
+import { loadAllApps } from "../appList";
 
 type AppRow = { key: string; label: string };
 
@@ -78,18 +79,23 @@ export default function FocusScreen({
   const [minutes, setMinutes] = useState(30);
   const [overlayOk, setOverlayOk] = useState(true);
   const [activeUntil, setActiveUntil] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
   const [, forceTick] = useState(0);
 
   const appIcons = useAppIcons(apps.map((a) => a.key));
+  const filteredApps = search.trim()
+    ? apps.filter((a) => a.label.toLowerCase().includes(search.trim().toLowerCase()))
+    : apps;
 
   // Load app list + restore any in-progress session when opened.
   useEffect(() => {
     if (!visible) return;
     setOverlayOk(canDrawOverlays());
+    setSearch("");
     (async () => {
       try {
-        const usage = await todayUsageSeconds();
-        setApps(usage.map((u) => ({ key: u.key, label: u.label })));
+        const all = await loadAllApps();
+        setApps(all.map((u) => ({ key: u.key, label: u.label })));
       } catch {
         setApps([]);
       }
@@ -241,15 +247,34 @@ export default function FocusScreen({
               </View>
             </View>
 
+            <View style={s.searchBar}>
+              <Ionicons name="search" size={16} color={C.ink3} />
+              <TextInput
+                style={s.searchInput}
+                placeholder="Search apps"
+                placeholderTextColor={C.ink3}
+                value={search}
+                onChangeText={setSearch}
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {search.length > 0 && (
+                <Pressable onPress={() => setSearch("")} hitSlop={10}>
+                  <Ionicons name="close-circle" size={16} color={C.ink3} />
+                </Pressable>
+              )}
+            </View>
+
             <FlatList
               style={{ flex: 1 }}
-              data={apps}
+              data={filteredApps}
               keyExtractor={(a) => a.key}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ paddingBottom: 108 }}
               ListEmptyComponent={
                 <Text style={s.empty}>
-                  No tracked apps yet. Use your phone a bit, then come back.
+                  {search.trim() ? `No apps match "${search.trim()}".` : "Loading your apps…"}
                 </Text>
               }
               renderItem={({ item }) => {
@@ -378,6 +403,12 @@ const s = StyleSheet.create({
   blockedChipText: { color: C.ink2, fontSize: 13.5, fontWeight: "600" },
 
   // app list
+  searchBar: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.glass, borderWidth: 1, borderColor: C.border,
+    borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10,
+  },
+  searchInput: { flex: 1, color: C.ink, fontSize: 15, padding: 0 },
   appRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 12, borderBottomWidth: 1, borderBottomColor: C.border },
   check: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: C.ink3, alignItems: "center", justifyContent: "center" },
   checkOn: { backgroundColor: C.amber, borderColor: C.amber },

@@ -180,6 +180,26 @@ export function getOpenCountToday(ruleId: string, packageName: string): number {
   }
 }
 
+// ---- Always-Allowed whitelist --------------------------------------------------
+
+/** Replace the global Always-Allowed whitelist (packages never blocked). */
+export function setAllowedApps(packageNames: string[]): void {
+  try {
+    FocusBlockerModule.setAllowedApps(packageNames);
+  } catch {
+    /* no-op on web/simulator */
+  }
+}
+
+/** Current Always-Allowed whitelist. */
+export function getAllowedApps(): string[] {
+  try {
+    return FocusBlockerModule.getAllowedApps();
+  } catch {
+    return [];
+  }
+}
+
 // ---- App icons -----------------------------------------------------------------
 
 /** Real launcher icons as base64 PNG data-URIs, keyed by package name. */

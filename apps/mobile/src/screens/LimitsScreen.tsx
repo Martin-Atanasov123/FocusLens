@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
 import { AppIcon, useAppIcons } from "../components/AppIcon";
 import BottomNav, { NavTab } from "../components/BottomNav";
+import AllowedScreen from "./AllowedScreen";
 import { AppLimit, getAppLimits, removeAppLimit, setAppLimit } from "../blocking/rules";
 import { loadAllApps, PickableApp } from "../appList";
 import { FREE_LIMIT_MAX } from "../paywall/config";
@@ -68,12 +69,11 @@ export default function LimitsScreen({
   const [saving, setSaving] = useState(false);
   const [expandedPkg, setExpandedPkg] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [allowedOpen, setAllowedOpen] = useState(false);
 
   const appIcons = useAppIcons([
     ...limits.map((l) => l.packageName),
-    // Only the first 40 rows are ever on screen at once; fetching every
-    // installed app's icon up front would be wasteful.
-    ...apps.slice(0, 40).map((a) => a.key),
+    ...apps.map((a) => a.key), // all apps — cache makes this a one-time cost
   ]);
 
   const load = useCallback(async () => {
@@ -242,6 +242,17 @@ export default function LimitsScreen({
                     Free plan: 1 daily limit. Upgrade for unlimited.
                   </Text>
                 )}
+
+                <Pressable style={s.allowRow} onPress={() => setAllowedOpen(true)}>
+                  <View style={s.allowIcon}>
+                    <Ionicons name="shield-checkmark-outline" size={18} color={C.amber} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.allowTitle}>Always Allowed apps</Text>
+                    <Text style={s.allowSub}>Apps that are never blocked</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={C.ink3} />
+                </Pressable>
               </View>
             }
             renderItem={({ item }) => {
@@ -445,6 +456,8 @@ export default function LimitsScreen({
             }}
           />
         )}
+
+        <AllowedScreen visible={allowedOpen} onClose={() => setAllowedOpen(false)} />
       </View>
     </Modal>
   );
@@ -586,6 +599,30 @@ const s = StyleSheet.create({
     fontSize: 11.5,
     marginTop: 9,
   },
+
+  // Always-Allowed entry row
+  allowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 18,
+    backgroundColor: C.glass,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  allowIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: C.glowFaint,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  allowTitle: { color: C.ink, fontSize: 15, fontWeight: "600" },
+  allowSub: { color: C.ink3, fontSize: 12.5, marginTop: 2 },
 
   // app picker
   pickerHint: {

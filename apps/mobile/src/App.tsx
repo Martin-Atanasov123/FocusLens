@@ -42,9 +42,10 @@ import {
   getSessionsToday,
   getStreak,
   getTotals,
+  markGoodDay,
   takeNewGemUnlocks,
 } from "./gamification/streaks";
-import { computeScore, saveScoreSnapshot } from "./gamification/score";
+import { computeScore, isDistractingPkg, saveScoreSnapshot } from "./gamification/score";
 import { notifyGemUnlocked, syncStreakReminder } from "./notifications";
 import { AppIcon, useAppIcons } from "./components/AppIcon";
 import { FadeInView, PressableScale } from "./components/Motion";
@@ -175,26 +176,38 @@ export default function App() {
   const [activeBase, setActiveBase] = useState<string | null>(null);
 
   // ---- Focus Score (derived before hooks so effects can depend on it) -----
-  // Real formula lives in gamification/score.ts: 100 baseline − screen-time
-  // penalty (2 h free, −8/h after) − limit penalties (−15 blown / −5 near)
-  // + completed-session bonus (+5 each, max +15). Loss-framed on purpose.
+  // Composite formula in gamification/score.ts (focus 60% + distraction 25% +
+  // discipline 15% + session bonus), clamped 1..99 — never a trivial 100.
   const totalSecs = usage.reduce((a, u) => a + u.secs, 0);
+  const distractionSecs = usage.reduce(
+    (a, u) => a + (isDistractingPkg(u.key) ? u.secs : 0),
+    0
+  );
   const exceededCount = limits.filter((l) => l.usedSecs >= l.dailyLimitSecs).length;
   const nearCapCount  = limits.filter(
     (l) => l.usedSecs < l.dailyLimitSecs && l.usedSecs / l.dailyLimitSecs >= 0.8
   ).length;
   const { score } = computeScore({
     totalScreenSecs: totalSecs,
+    distractionSecs,
     exceededCount,
     nearCapCount,
     sessionsToday,
   });
   const scoreColor = score >= 80 ? C.amber : score >= 50 ? C.flame : C.red;
 
-  // Best-effort daily score history (fuels future weekly report).
+  // Best-effort daily score history + streak crediting. A "good day" for the
+  // streak = the app has real usage data AND the score cleared the bar (65).
+  // Completed focus sessions credit separately (finalizePendingSession).
   useEffect(() => {
     saveScoreSnapshot(score);
-  }, [score]);
+    if (permission && usage.length > 0 && score >= 65) {
+      markGoodDay(new Date().toISOString().slice(0, 10))
+        .then((st) => setStreakCount(st.current))
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [score, permission, usage.length]);
 
   // Score counts up smoothly whenever the target changes (0 → score on open).
   const [displayScore, setDisplayScore] = useState(0);
